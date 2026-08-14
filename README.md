@@ -176,6 +176,25 @@ curl http://localhost:4000/api/v1/health/ready    # includes database check
 
 Open <http://localhost:3000> and sign in with a seeded account.
 
+### Troubleshooting
+
+**`__webpack_modules__[moduleId] is not a function`** on any page, with a stack
+entirely inside Next and React internals and no frames in application code.
+This is a stale `.next` cache, not a code bug. `next build` and `next dev`
+share the same `.next` directory, so running a production build and then the
+dev server (or the reverse) leaves a manifest from one build under the webpack
+runtime of the other, and the module IDs no longer line up. Fix:
+
+```bash
+pnpm --filter @billing/web dev:clean    # rm -rf .next && pnpm dev
+```
+
+**Signed in, but landed on the onboarding screen** even though the account
+already belongs to an organisation. A session has no active organisation until
+one is selected — `session.activeOrganisationId` is server-written only, and
+sign-in does not set it, even for a user with exactly one membership. Pick the
+organisation from the switcher in the app shell.
+
 ## Seeded accounts
 
 All use password `DevPassword123!`.
