@@ -28,6 +28,24 @@ async function bootstrap() {
   app.use(cookieParser());
 
   /**
+   * CORS is configured BEFORE the Better Auth mount below.
+   *
+   * Nest's enableCors installs Express middleware in call order, so registering
+   * it after the auth handler left OPTIONS preflights to Better Auth, which
+   * answers them without CORS headers — the browser then blocked every
+   * cross-origin sign-in. curl does not send preflights, so this only appeared
+   * once the flow ran in a real browser.
+   */
+  app.enableCors({
+    origin: corsOrigins(env),
+    credentials: true,
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Accept', 'X-Request-Id', 'Idempotency-Key'],
+    exposedHeaders: ['X-Request-Id'],
+    maxAge: 600,
+  });
+
+  /**
    * Better Auth handler, mounted BEFORE express.json().
    *
    * Order is deliberate: Better Auth reads the raw request stream itself, so
@@ -55,16 +73,6 @@ async function bootstrap() {
     const subPath = req.path.replace(/\/+$/, '') || '/';
     if (APP_OWNED_AUTH_ROUTES.has(subPath)) return next();
     return betterAuthHandler(req, res);
-  });
-
-  // Strict allow-list; credentials must be on for cookie auth to work.
-  app.enableCors({
-    origin: corsOrigins(env),
-    credentials: true,
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Accept', 'X-Request-Id', 'Idempotency-Key'],
-    exposedHeaders: ['X-Request-Id'],
-    maxAge: 600,
   });
 
   // /api/v1/... (Tech Arch Doc §6)

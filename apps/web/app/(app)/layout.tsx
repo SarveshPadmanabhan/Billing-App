@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { X } from 'lucide-react';
@@ -24,6 +24,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     queryFn: () => apiFetch<CurrentUserResponse>('/auth/me'),
   });
 
+  // Redirects belong in an effect. Calling router.push() during render mutates
+  // the router while React is rendering this component, which React warns
+  // about and which can drop the navigation.
+  const unauthenticated = error instanceof ApiRequestError && error.status === 401;
+  const needsOnboarding = Boolean(data) && !data?.organisation;
+
+  useEffect(() => {
+    if (unauthenticated) router.replace('/login');
+    else if (needsOnboarding) router.replace('/onboarding');
+  }, [unauthenticated, needsOnboarding, router]);
+
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-canvas">
@@ -35,10 +46,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   if (error) {
-    if (error instanceof ApiRequestError && error.status === 401) {
-      router.push('/login');
-      return null;
-    }
+    // The effect above handles the redirect; render nothing meanwhile.
+    if (unauthenticated) return null;
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-canvas px-4">
         <p className="text-body text-ink">Something went wrong.</p>
@@ -56,10 +65,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (!data) return null;
 
   // A user with no organisation must finish onboarding before using the app.
-  if (!data.organisation) {
-    router.push('/onboarding');
-    return null;
-  }
+  // The effect above performs the navigation.
+  if (!data.organisation) return null;
 
   return (
     <div className="flex min-h-screen bg-canvas">
