@@ -39,10 +39,17 @@ const serverSchema = z
     REDIS_URL: z.string().startsWith('redis://').default('redis://localhost:6379'),
 
     S3_ENDPOINT: z.string().optional(),
-    S3_REGION: z.string().optional(),
+    S3_REGION: z.string().default('us-east-1'),
     S3_BUCKET: z.string().optional(),
     S3_ACCESS_KEY_ID: z.string().optional(),
     S3_SECRET_ACCESS_KEY: z.string().optional(),
+    // MinIO requires path-style addressing; AWS S3 uses virtual-host style.
+    S3_FORCE_PATH_STYLE: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((v) => v === 'true'),
+    // Download links are deliberately short-lived (Security Doc §35).
+    S3_SIGNED_URL_TTL_SECONDS: z.coerce.number().int().min(30).max(3600).default(300),
 
     EMAIL_PROVIDER: z.string().optional(),
     EMAIL_FROM: z.string().optional(),

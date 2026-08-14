@@ -80,6 +80,47 @@ SQL
 `CREATEDB` on `billing_owner` is required by Prisma Migrate for its shadow
 database.
 
+### 2b. Object storage (MinIO) and PDF rendering
+
+Needed for quotation/invoice PDFs (TICKET-020, TICKET-029).
+
+```bash
+brew install minio minio-mc
+```
+
+> The `minio` formula is marked deprecated (archived upstream repo, disabled
+> from 2027-02-17). It is fine for local development; production uses real
+> S3-compatible storage, so nothing depends on the formula surviving.
+
+Start the server with explicit dev credentials — not the defaults:
+
+```bash
+mkdir -p ~/.minio-billing-data
+MINIO_ROOT_USER=billing_minio MINIO_ROOT_PASSWORD=billing_minio_dev_secret \
+  minio server --address :9000 --console-address :9001 ~/.minio-billing-data
+```
+
+Create the bucket (private by default — do not make it public):
+
+```bash
+mc alias set billing-local http://localhost:9000 billing_minio billing_minio_dev_secret
+mc mb --ignore-existing billing-local/billing-documents
+mc anonymous get billing-local/billing-documents   # must print: private
+```
+
+Console at <http://localhost:9001>. Verify isolation holds:
+
+```bash
+# Anonymous access must be refused.
+curl -o /dev/null -w '%{http_code}\n' http://localhost:9000/billing-documents/anything   # 403
+```
+
+Install the headless browser used for PDF rendering:
+
+```bash
+pnpm --filter @billing/worker exec playwright install chromium
+```
+
 ### 3. Configure environment
 
 ```bash
