@@ -49,9 +49,11 @@ commit *or* rollback with no cleanup path to forget. They are keyed per
 resource, so unrelated documents never block each other, and cost nothing when
 uncontended.
 
-## Testing rule: a check you haven't watched fail isn't a check
+## Testing rules: a check you haven't watched fail isn't a check
 
-Two rules, the second learned the harder way.
+Three rules, each learned the harder way than the last. They share one
+instinct: **a passing result is a claim, not evidence.** Establish that the
+check ran, that it ran the real thing, and that it was capable of saying no.
 
 **1. A concurrency guarantee is not established until a test has run it
 concurrently.** Sequential tests pass against all three broken designs above.
@@ -61,7 +63,14 @@ failing, not merely observed passing.** A green result has two possible
 causes — the invariant holds, or the check is broken — and they are
 indistinguishable from the output alone.
 
-This is not hypothetical. Both have happened in this codebase:
+**3. A green build or test result has proven nothing until you have confirmed
+it actually built or ran what it claims to.** Rules 1 and 2 assume the check
+executed at all. This one does not. Exit code 0 means "the tool did not
+report an error" — it does not mean the tool did any work. Verify the
+artefact, not the exit code: did files get emitted, did tests get collected,
+did the loop have rows to iterate over?
+
+This is not hypothetical. All three have happened in this codebase:
 
 - The E2E smoke suite was validated by reintroducing the CORS-preflight bug:
   5 of 6 tests failed while every API test stayed green. Without that
@@ -72,6 +81,19 @@ This is not hypothetical. Both have happened in this codebase:
   summed to 0 — which is exactly what "no violations" looks like. A second bug
   compounded it: errors were suppressed with `2>/dev/null`, so a failed query
   returned an empty string that arithmetic treated as 0.
+- `nest build` **exited 0 while emitting nothing.** `apps/api` had
+  `incremental: true` in its tsconfig alongside nest's `deleteOutDir: true`:
+  the `.tsbuildinfo` recorded every file as already emitted, `deleteOutDir`
+  then removed them, and the next build skipped emitting because the buildinfo
+  said there was nothing to do. A fresh clone worked (no buildinfo yet), so
+  this only appeared on rebuild — the worst kind of intermittent. Fixed with
+  `incremental: false`, proven by building twice consecutively and confirming
+  `dist` was populated both times.
+- `pnpm test` **failed permanently while testing nothing.** `apps/api` ran
+  vitest against a directory with no test files, exiting 1 every time. The
+  API's real coverage lives in `tests/integration/*.sh`. An always-red suite
+  is as useless as an always-green one: both stop carrying information, and
+  people learn to ignore the output.
 
 Practical consequences for anything in this class:
 
@@ -84,6 +106,11 @@ Practical consequences for anything in this class:
   than silent.
 - **Refuse to run rather than pass** when preconditions are unmet — the audit
   exits non-zero if it cannot read any rows.
+- **Check the artefact, not the exit code.** A build is verified by inspecting
+  its output directory; a test run by its collected-test count. "Found 0
+  errors" and "0 tests ran" look identical in a summary line.
+- **Treat an always-red result as broken too.** A suite that cannot pass gets
+  ignored just as fast as one that cannot fail.
 
 Every feature in this class ships with a test that fires N simultaneous
 requests via `Promise.all` or backgrounded `curl` and asserts the invariant on
@@ -163,3 +190,6 @@ correctness decision that makes storing it safe.
   pattern and ship its own concurrent test.
 - Anything that changes a stored financial aggregate must recompute it from
   the source rows, per the companion principle above.
+- Anything added to the build or test pipeline must be verified by its output
+  rather than its exit status, per testing rule 3 — a step that silently does
+  no work is indistinguishable from one that succeeds.

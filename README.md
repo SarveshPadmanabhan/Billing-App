@@ -237,7 +237,11 @@ result: a query that silently fails would otherwise report zero violations.
 Concurrency guarantees are covered by tests that actually run concurrently —
 see [ADR-009](docs/architecture/adr/009-concurrency-on-shared-state.md), which
 also records the "derive balances from the ledger, never increment them"
-principle that any future work on stored money aggregates must follow.
+principle that any future work on stored money aggregates must follow, and
+three testing rules built on one instinct: a passing result is a claim, not
+evidence. A check must be proven capable of failing, and a green build or test
+must be verified by its output rather than its exit code — `nest build` once
+exited 0 while emitting nothing at all.
 
 ## Layout
 
