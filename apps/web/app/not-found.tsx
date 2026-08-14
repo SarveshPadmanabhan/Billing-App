@@ -1,15 +1,6 @@
 import Link from 'next/link';
 
-/**
- * App Router 404.
- *
- * `dynamic = 'force-dynamic'` keeps this page out of the static export pass.
- * Next 15.5 otherwise routes the prerender of /404 through its internal Pages
- * Router error document, whose <Html> import fails the build in an
- * App-Router-only project. Rendering on demand is the correct trade here: the
- * page is trivial and every route behind it is already dynamic.
- */
-export const dynamic = 'force-dynamic';
+/** App Router 404. */
 
 export default function NotFound() {
   return (

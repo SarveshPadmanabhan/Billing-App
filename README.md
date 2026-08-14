@@ -358,33 +358,37 @@ rolls back with it.
 
 ## Known issues
 
-### Web production build — `<Html>` prerender error (resolve pre-deploy)
+### Web production build — resolved
 
-`pnpm --filter @billing/web build` fails during static export with
+`pnpm build` works. This section is kept because the failure was misleading and
+the lesson generalises.
+
+**Symptom:** the build failed during static export with
 `<Html> should not be imported outside of pages/_document`, thrown while
-prerendering Next's built-in `/404`. `next dev` runs correctly and every route
-renders and behaves as expected, so this blocks deployment only.
+prerendering Next's built-in `/404`. `next dev` worked perfectly.
 
-Not caused by application code: it reproduces with an empty `app/` containing
-just a root layout and one trivial page, and persists across Next 15.1.3 and
-15.5.23 with React pinned to 19.0.0.
+**What it was not:** duplicate `next` copies (there was one, since fixed),
+stray `pages/_document`, `global-error.tsx`, or the Next/React versions. Hours
+went into each of those.
 
-**Already investigated and ruled out** (do not re-tread):
+**What it actually was:** `NODE_ENV=development` leaking into the production
+build. The build script ran `dotenv -e ../../.env -- next build`, and the
+shared `.env` sets `NODE_ENV=development` for the API and worker. Next then
+took a code path that routed `/404` through the Pages Router runtime, whose
+`<Html>` import tripped its own guard — an error with no visible connection to
+the cause. Next did warn ("You are using a non-standard NODE_ENV value"), and
+that warning was the whole answer, dismissed as noise for weeks.
 
-| Hypothesis | Result |
-| --- | --- |
-| Duplicate hoisted `next` | **Was real, now fixed.** `better-auth` declares `next` as an optional peer, so `apps/api` pulled a second copy (15.5.23) beside the web app's. Resolved via `overrides.next` + `peerDependencyRules.ignoreMissing` in `pnpm-workspace.yaml`. Tree now has exactly one `next` and one `react`/`react-dom`. **Error persists.** |
-| Stray `pages/_document.*` / `pages/_app.*` | None anywhere in the workspace. |
-| `app/global-error.tsx` | Contributory — with it present the build fails at `/404`, without it at `/500`. It has been **removed**; `app/not-found.tsx` remains. Error persists regardless. |
-| Adding `pages/404.tsx`, `500.tsx`, `_error.tsx`, `_document.tsx` | Makes it worse: the guard then rejects `Html` from our own legitimate `_document`, indicating `next/document` resolves to a different instance than the export worker. Reverted. |
-| Next 15.1.3 vs 15.5.23 | Fails identically on both, with a fully clean lockfile and deduped tree. |
-| React 19.0.0 vs 19.2.8 | Fails on both; pinned to 19.0.0. |
+Underneath it sat a second, real bug the misleading error had masked: `/login`
+called `useSearchParams()` without a Suspense boundary, which bails the page
+out of prerendering. Fixed by wrapping the form.
 
-Current state: single `next@15.5.23`, single `react@19.0.0`, no `pages/`
-directory, no `global-error.tsx`, lockfile regenerated from scratch — and the
-`/404` prerender still fails.
+**Two lessons worth keeping:**
 
-Remaining avenues for whoever picks this up: try `output: 'standalone'`, or
-disable the export step, or reproduce in a bare Next app outside the workspace
-to determine whether it is a Turborepo/pnpm interaction or a Next bug worth
-filing upstream.
+- A shared `.env` must not be piped into a production build. `apps/web/.env.production`
+  now holds only `NEXT_PUBLIC_*` values, and `pnpm build` is plain `next build`
+  so Next sets `NODE_ENV` itself.
+- When a framework warns about something you did not ask about, read it before
+  dismissing it. The warning appeared in every failing build from the start.
+
+

@@ -29,3 +29,6 @@ blob-report/
 
 *.tsbuildinfo
 .pgdata/
+
+# Committed: contains only public build-time config, no secrets.
+!apps/web/.env.production

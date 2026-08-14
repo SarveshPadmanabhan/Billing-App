@@ -1,11 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { authClient } from '../../../lib/auth-client';
 
-export default function LoginPage() {
+/**
+ * useSearchParams() opts a component out of static rendering, so Next requires
+ * a Suspense boundary around it: without one the whole page bails out of
+ * prerendering and the production build fails. The form is wrapped below and
+ * the page shell stays static.
+ */
+function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
   const [email, setEmail] = useState('');
@@ -43,12 +49,8 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-canvas px-4">
-      <div className="w-full max-w-[400px] rounded-md border border-border bg-surface p-6 shadow-card">
-        <h1 className="text-h2 text-ink">Sign in</h1>
-        <p className="mt-1 text-body text-ink-muted">Access your billing workspace.</p>
-
-        <form onSubmit={onSubmit} className="mt-6 flex flex-col gap-4" noValidate>
+    <>
+      <form onSubmit={onSubmit} className="mt-6 flex flex-col gap-4" noValidate>
           {error && (
             <div role="alert" className="rounded-sm bg-danger-light p-3 text-body-sm text-danger">
               {error}
@@ -85,21 +87,36 @@ export default function LoginPage() {
             />
           </div>
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="h-10 rounded-sm bg-primary px-4 text-body font-medium text-white transition-colors hover:bg-primary-hover disabled:bg-ink-disabled"
-          >
-            {submitting ? 'Signing in…' : 'Sign in'}
-          </button>
-        </form>
+        <button
+          type="submit"
+          disabled={submitting}
+          className="h-10 rounded-sm bg-primary px-4 text-body font-medium text-white transition-colors hover:bg-primary-hover disabled:bg-ink-disabled"
+        >
+          {submitting ? 'Signing in…' : 'Sign in'}
+        </button>
+      </form>
 
-        <p className="mt-4 text-body-sm text-ink-muted">
-          No account?{' '}
-          <Link href="/register" className="text-primary hover:underline">
-            Create one
-          </Link>
-        </p>
+      <p className="mt-4 text-body-sm text-ink-muted">
+        No account?{' '}
+        <Link href="/register" className="text-primary hover:underline">
+          Create one
+        </Link>
+      </p>
+    </>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-canvas px-4">
+      <div className="w-full max-w-[400px] rounded-md border border-border bg-surface p-6 shadow-card">
+        <h1 className="text-h2 text-ink">Sign in</h1>
+        <p className="mt-1 text-body text-ink-muted">Access your billing workspace.</p>
+        <Suspense
+          fallback={<p className="mt-6 text-body text-ink-muted">Loading…</p>}
+        >
+          <LoginForm />
+        </Suspense>
       </div>
     </main>
   );
