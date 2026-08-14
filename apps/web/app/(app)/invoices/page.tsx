@@ -1,38 +1,36 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { Search, Plus, AlertTriangle } from 'lucide-react';
+import { Plus, AlertTriangle } from 'lucide-react';
 import type { CurrentUserResponse, InvoiceStatus } from '@billing/types';
 import { hasPermission } from '@billing/types';
 import { apiFetch, ApiRequestError } from '../../../lib/api-client';
 import { listInvoices, INVOICE_STATUS_TONE, type InvoiceListParams } from '../../../lib/invoices';
 import { customerName } from '../../../lib/customers';
+import { useUrlFilters } from '../../../lib/use-url-filters';
+import { DocumentFilters, hasActiveFilters } from '../../../components/documents/document-filters';
 import {
   Button,
   Card,
   Badge,
   Money,
-  Input,
-  Select,
   EmptyState,
   ErrorState,
   PermissionDenied,
   TableSkeleton,
 } from '../../../components/ui/primitives';
 
-/** TICKET-023 — invoice list. */
+/** TICKET-023 — invoice list, with TICKET-037 combined filters. */
 
-const STATUSES: InvoiceStatus[] = [
-  'DRAFT',
-  'SENT',
-  'PARTIALLY_PAID',
-  'PAID',
-  'OVERDUE',
-  'CANCELLED',
-];
+const STATUSES = [
+  { value: 'DRAFT', label: 'Draft' },
+  { value: 'SENT', label: 'Sent' },
+  { value: 'PARTIALLY_PAID', label: 'Partially paid' },
+  { value: 'PAID', label: 'Paid' },
+  { value: 'OVERDUE', label: 'Overdue' },
+  { value: 'CANCELLED', label: 'Cancelled' },
+] as const;
 
 const humanStatus = (s: string) =>
   s.replace(/_/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase());
@@ -40,46 +38,35 @@ const humanStatus = (s: string) =>
 const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
-/** True when the due date has passed and money is still owed. */
 function isPastDue(dueDate: string, amountDue: string, status: InvoiceStatus): boolean {
   if (status === 'PAID' || status === 'CANCELLED' || status === 'DRAFT') return false;
   return Number(amountDue) > 0 && new Date(dueDate) < new Date();
 }
 
 export default function InvoicesPage() {
-  const searchParams = useSearchParams();
-  const urlStatus = searchParams?.get('status');
-  const urlSearch = searchParams?.get('search') ?? '';
-  const urlOutstanding = searchParams?.get('outstanding') === 'true';
-
-  const [search, setSearch] = useState(urlSearch);
-  const [debounced, setDebounced] = useState(urlSearch);
-  const [status, setStatus] = useState<InvoiceStatus | ''>(
-    urlStatus && (STATUSES as string[]).includes(urlStatus) ? (urlStatus as InvoiceStatus) : '',
-  );
-  const [outstandingOnly, setOutstandingOnly] = useState(urlOutstanding);
-  const [page, setPage] = useState(1);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebounced(search);
-      setPage(1);
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [search]);
+  const { filters, applied, setFilters, page, setPage } = useUrlFilters(['outstanding']);
 
   const { data: me } = useQuery({
     queryKey: ['auth', 'me'],
     queryFn: () => apiFetch<CurrentUserResponse>('/auth/me'),
   });
 
+  const outstandingOnly = applied.outstanding === 'true';
+
   const params: InvoiceListParams = {
     page,
     limit: 25,
-    ...(debounced && { search: debounced }),
-    // The outstanding filter selects its own statuses, so the two are
-    // mutually exclusive rather than combined into an impossible query.
-    ...(outstandingOnly ? { outstanding: 'true' as const } : status ? { status } : {}),
+    ...(applied.search && { search: applied.search }),
+    ...(applied.customerId && { customerId: applied.customerId }),
+    ...(applied.dateFrom && { dateFrom: applied.dateFrom }),
+    ...(applied.dateTo && { dateTo: applied.dateTo }),
+    // The outstanding filter picks its own set of statuses, so combining it
+    // with an explicit status would build a contradictory query.
+    ...(outstandingOnly
+      ? { outstanding: 'true' as const }
+      : applied.status
+        ? { status: applied.status as InvoiceStatus }
+        : {}),
   };
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
@@ -94,7 +81,7 @@ export default function InvoicesPage() {
 
   if (role && !canView) return <PermissionDenied />;
 
-  const isFiltered = Boolean(debounced || status || outstandingOnly);
+  const filtered = hasActiveFilters(filters);
 
   return (
     <div className="flex flex-col gap-6">
@@ -115,62 +102,30 @@ export default function InvoicesPage() {
         )}
       </header>
 
-      <Card className="flex flex-wrap items-end gap-4 p-4">
-        <div className="flex min-w-[240px] flex-1 flex-col gap-2">
-          <label htmlFor="invoice-search" className="text-body-sm font-medium text-ink">
-            Search
-          </label>
-          <div className="relative">
-            <Search
-              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted"
-              aria-hidden="true"
+      <DocumentFilters
+        values={filters}
+        onChange={setFilters}
+        statuses={STATUSES}
+        searchPlaceholder="Number or customer"
+        extra={
+          <label className="flex h-10 items-center gap-2 text-body-sm text-ink-secondary">
+            <input
+              type="checkbox"
+              checked={outstandingOnly}
+              onChange={(e) =>
+                setFilters({
+                  ...filters,
+                  outstanding: e.target.checked ? 'true' : '',
+                  // Clear a conflicting status when switching to outstanding.
+                  status: e.target.checked ? '' : filters.status,
+                })
+              }
+              className="h-4 w-4 rounded border-border-strong text-primary focus:ring-2 focus:ring-primary-light"
             />
-            <Input
-              id="invoice-search"
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Number or customer"
-              className="pl-9"
-            />
-          </div>
-        </div>
-
-        <div className="flex w-[200px] flex-col gap-2">
-          <label htmlFor="invoice-status" className="text-body-sm font-medium text-ink">
-            Status
+            Outstanding only
           </label>
-          <Select
-            id="invoice-status"
-            value={status}
-            disabled={outstandingOnly}
-            onChange={(e) => {
-              setStatus(e.target.value as InvoiceStatus | '');
-              setPage(1);
-            }}
-          >
-            <option value="">All statuses</option>
-            {STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {humanStatus(s)}
-              </option>
-            ))}
-          </Select>
-        </div>
-
-        <label className="flex h-10 items-center gap-2 text-body-sm text-ink-secondary">
-          <input
-            type="checkbox"
-            checked={outstandingOnly}
-            onChange={(e) => {
-              setOutstandingOnly(e.target.checked);
-              setPage(1);
-            }}
-            className="h-4 w-4 rounded border-border-strong text-primary focus:ring-2 focus:ring-primary-light"
-          />
-          Outstanding only
-        </label>
-      </Card>
+        }
+      />
 
       {isLoading ? (
         <TableSkeleton rows={6} columns={7} />
@@ -183,25 +138,14 @@ export default function InvoicesPage() {
         />
       ) : !data || data.items.length === 0 ? (
         <EmptyState
-          title={isFiltered ? 'No matching invoices' : 'No invoices yet'}
+          title={filtered ? 'No matching invoices' : 'No invoices yet'}
           description={
-            isFiltered
-              ? 'Try a different search or clear the filters.'
+            filtered
+              ? 'No invoices match these filters. Try widening the date range or clearing them.'
               : 'Create an invoice directly, or convert an accepted quotation.'
           }
           action={
-            isFiltered ? (
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setSearch('');
-                  setStatus('');
-                  setOutstandingOnly(false);
-                }}
-              >
-                Clear filters
-              </Button>
-            ) : canWrite ? (
+            !filtered && canWrite ? (
               <Link href="/invoices/new">
                 <Button>New invoice</Button>
               </Link>
@@ -304,14 +248,14 @@ export default function InvoicesPage() {
                 <Button
                   variant="secondary"
                   disabled={data.page <= 1}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  onClick={() => setPage(Math.max(1, page - 1))}
                 >
                   Previous
                 </Button>
                 <Button
                   variant="secondary"
                   disabled={data.page >= data.totalPages}
-                  onClick={() => setPage((p) => p + 1)}
+                  onClick={() => setPage(page + 1)}
                 >
                   Next
                 </Button>

@@ -6,9 +6,9 @@ payments, PDFs and reporting.
 This is a financial application. Data integrity, tenant isolation and
 auditability take precedence over delivery speed.
 
-**Status:** Phase 1 (Foundation) complete — TICKET-001…008.
-Phase 2 in progress — customers, quotations, invoices, payments and PDFs
-(TICKET-009…035) are done; search and filters (036, 037) remain.
+**Status:** Phase 1 (Foundation) and Phase 2 (core billing workflow) complete —
+TICKET-001 through TICKET-037. The full loop works end to end:
+customer → quotation → invoice → payment, with PDFs, search and filters.
 
 ---
 
@@ -211,6 +211,7 @@ as well as behaviour:
 | `quotations.sh` | Lifecycle, server-side totals, duplicate, conversion incl. 8-way concurrent conversion |
 | `invoices.sh` | Lifecycle, cancel-not-delete, overdue detection, BILLING scoped cancel |
 | `payments.sh` | Idempotency, overpayment rejection, voiding, and three concurrency races |
+| `search.sh` | Global search across all three types, combined filters, tenant scoping |
 | `pdf.sh` | Content-hash caching, concurrent generation, signed-URL access control |
 
 **E2E** (`tests/e2e/*.spec.ts`) — a small Playwright suite over the critical

@@ -1,10 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { Search, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import type { CurrentUserResponse, QuotationStatus } from '@billing/types';
 import { hasPermission } from '@billing/types';
 import { apiFetch, ApiRequestError } from '../../../lib/api-client';
@@ -14,30 +12,29 @@ import {
   type QuotationListParams,
 } from '../../../lib/quotations';
 import { customerName } from '../../../lib/customers';
+import { useUrlFilters } from '../../../lib/use-url-filters';
+import { DocumentFilters, hasActiveFilters } from '../../../components/documents/document-filters';
 import {
   Button,
-  Card,
   Badge,
   Money,
-  Input,
-  Select,
   EmptyState,
   ErrorState,
   PermissionDenied,
   TableSkeleton,
 } from '../../../components/ui/primitives';
 
-/** TICKET-014 — quotation list. */
+/** TICKET-014 — quotation list, with TICKET-037 combined filters. */
 
-const STATUSES: QuotationStatus[] = [
-  'DRAFT',
-  'SENT',
-  'ACCEPTED',
-  'REJECTED',
-  'EXPIRED',
-  'CONVERTED',
-  'CANCELLED',
-];
+const STATUSES = [
+  { value: 'DRAFT', label: 'Draft' },
+  { value: 'SENT', label: 'Sent' },
+  { value: 'ACCEPTED', label: 'Accepted' },
+  { value: 'REJECTED', label: 'Rejected' },
+  { value: 'EXPIRED', label: 'Expired' },
+  { value: 'CONVERTED', label: 'Converted' },
+  { value: 'CANCELLED', label: 'Cancelled' },
+] as const;
 
 const humanStatus = (s: string) =>
   s.replace(/_/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase());
@@ -46,28 +43,7 @@ const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
 export default function QuotationsPage() {
-  // Seed filters from the URL so a shared or bookmarked link such as
-  // /quotations?status=DRAFT opens with that filter applied.
-  const searchParams = useSearchParams();
-  const initialStatus = searchParams?.get('status');
-  const initialSearch = searchParams?.get('search') ?? '';
-
-  const [search, setSearch] = useState(initialSearch);
-  const [debounced, setDebounced] = useState(initialSearch);
-  const [status, setStatus] = useState<QuotationStatus | ''>(
-    initialStatus && (STATUSES as string[]).includes(initialStatus)
-      ? (initialStatus as QuotationStatus)
-      : '',
-  );
-  const [page, setPage] = useState(1);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebounced(search);
-      setPage(1);
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [search]);
+  const { filters, applied, setFilters, page, setPage } = useUrlFilters();
 
   const { data: me } = useQuery({
     queryKey: ['auth', 'me'],
@@ -77,8 +53,11 @@ export default function QuotationsPage() {
   const params: QuotationListParams = {
     page,
     limit: 25,
-    ...(debounced && { search: debounced }),
-    ...(status && { status }),
+    ...(applied.search && { search: applied.search }),
+    ...(applied.status && { status: applied.status as QuotationStatus }),
+    ...(applied.customerId && { customerId: applied.customerId }),
+    ...(applied.dateFrom && { dateFrom: applied.dateFrom }),
+    ...(applied.dateTo && { dateTo: applied.dateTo }),
   };
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
@@ -93,7 +72,7 @@ export default function QuotationsPage() {
 
   if (role && !canView) return <PermissionDenied />;
 
-  const isFiltered = Boolean(debounced || status);
+  const filtered = hasActiveFilters(filters);
 
   return (
     <div className="flex flex-col gap-6">
@@ -114,48 +93,12 @@ export default function QuotationsPage() {
         )}
       </header>
 
-      <Card className="flex flex-wrap items-end gap-4 p-4">
-        <div className="flex min-w-[240px] flex-1 flex-col gap-2">
-          <label htmlFor="quotation-search" className="text-body-sm font-medium text-ink">
-            Search
-          </label>
-          <div className="relative">
-            <Search
-              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted"
-              aria-hidden="true"
-            />
-            <Input
-              id="quotation-search"
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Number or customer"
-              className="pl-9"
-            />
-          </div>
-        </div>
-
-        <div className="flex w-[200px] flex-col gap-2">
-          <label htmlFor="quotation-status" className="text-body-sm font-medium text-ink">
-            Status
-          </label>
-          <Select
-            id="quotation-status"
-            value={status}
-            onChange={(e) => {
-              setStatus(e.target.value as QuotationStatus | '');
-              setPage(1);
-            }}
-          >
-            <option value="">All statuses</option>
-            {STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {humanStatus(s)}
-              </option>
-            ))}
-          </Select>
-        </div>
-      </Card>
+      <DocumentFilters
+        values={filters}
+        onChange={setFilters}
+        statuses={STATUSES}
+        searchPlaceholder="Number or customer"
+      />
 
       {isLoading ? (
         <TableSkeleton rows={6} columns={6} />
@@ -168,24 +111,14 @@ export default function QuotationsPage() {
         />
       ) : !data || data.items.length === 0 ? (
         <EmptyState
-          title={isFiltered ? 'No matching quotations' : 'No quotations yet'}
+          title={filtered ? 'No matching quotations' : 'No quotations yet'}
           description={
-            isFiltered
-              ? 'Try a different search or clear the filters.'
+            filtered
+              ? 'No quotations match these filters. Try widening the date range or clearing them.'
               : 'Create a quotation to send a priced offer to a customer.'
           }
           action={
-            isFiltered ? (
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setSearch('');
-                  setStatus('');
-                }}
-              >
-                Clear filters
-              </Button>
-            ) : canWrite ? (
+            !filtered && canWrite ? (
               <Link href="/quotations/new">
                 <Button>New quotation</Button>
               </Link>
@@ -265,14 +198,14 @@ export default function QuotationsPage() {
                 <Button
                   variant="secondary"
                   disabled={data.page <= 1}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  onClick={() => setPage(Math.max(1, page - 1))}
                 >
                   Previous
                 </Button>
                 <Button
                   variant="secondary"
                   disabled={data.page >= data.totalPages}
-                  onClick={() => setPage((p) => p + 1)}
+                  onClick={() => setPage(page + 1)}
                 >
                   Next
                 </Button>

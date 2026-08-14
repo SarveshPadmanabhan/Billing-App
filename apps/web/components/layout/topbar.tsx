@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type { CurrentUserResponse } from '@billing/types';
 import { authClient } from '../../lib/auth-client';
+import { GlobalSearch } from './global-search';
 
 /**
  * Top bar (Frontend Spec §7): notifications, organisation switcher, avatar
@@ -42,17 +43,20 @@ export function Topbar({
         <Menu className="h-5 w-5" aria-hidden="true" />
       </button>
 
-      <div className="flex min-w-0 flex-1 items-center gap-3">
-        {user.organisation && (
-          <span className="truncate text-body font-medium text-ink">
-            {user.organisation.organisationName}
-          </span>
-        )}
-        {user.organisation && (
-          <span className="hidden rounded-full bg-canvas px-2 py-0.5 text-caption text-ink-secondary sm:inline">
-            {user.organisation.role}
-          </span>
-        )}
+      <div className="flex min-w-0 flex-1 items-center gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          {user.organisation && (
+            <span className="truncate text-body font-medium text-ink">
+              {user.organisation.organisationName}
+            </span>
+          )}
+          {user.organisation && (
+            <span className="hidden rounded-full bg-canvas px-2 py-0.5 text-caption text-ink-secondary lg:inline">
+              {user.organisation.role}
+            </span>
+          )}
+        </div>
+        <GlobalSearch />
       </div>
 
       <div className="flex items-center gap-2">

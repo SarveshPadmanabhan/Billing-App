@@ -14,6 +14,8 @@ import { InvoicesController } from './invoices/invoices.controller.js';
 import { InvoicesService } from './invoices/invoices.service.js';
 import { PaymentsController } from './payments/payments.controller.js';
 import { PaymentsService } from './payments/payments.service.js';
+import { SearchController } from './search/search.controller.js';
+import { SearchService } from './search/search.service.js';
 import { PdfService } from './documents/pdf.service.js';
 import { StorageService } from './documents/storage.service.js';
 
@@ -41,6 +43,7 @@ const env = loadServerEnv();
     QuotationsController,
     InvoicesController,
     PaymentsController,
+    SearchController,
   ],
   providers: [
     {
@@ -52,6 +55,7 @@ const env = loadServerEnv();
     QuotationsService,
     InvoicesService,
     PaymentsService,
+    SearchService,
     StorageService,
     PdfService,
 
