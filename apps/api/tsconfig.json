@@ -8,6 +8,7 @@
     "types": ["node"],
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
+    "incremental": false,
     "strictPropertyInitialization": false,
     "noUncheckedIndexedAccess": false
   },

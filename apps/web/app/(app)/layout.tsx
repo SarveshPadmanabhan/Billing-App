@@ -70,7 +70,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-canvas">
-      {/* Desktop sidebar */}
+      {/* Desktop sidebar. `hidden` removes it from the accessibility tree
+          below lg, so it cannot collide with the drawer's landmark. */}
       <aside className="hidden lg:block">
         <div className="fixed inset-y-0 left-0 w-[248px]">
           <Sidebar />
@@ -87,7 +88,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           />
           <div className="absolute inset-y-0 left-0">
             <div className="relative h-full">
-              <Sidebar onNavigate={() => setNavOpen(false)} />
+              <Sidebar label="Mobile navigation" onNavigate={() => setNavOpen(false)} />
               <button
                 type="button"
                 onClick={() => setNavOpen(false)}

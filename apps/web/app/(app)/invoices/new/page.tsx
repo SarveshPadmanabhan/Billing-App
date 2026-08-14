@@ -7,9 +7,11 @@ import { ChevronLeft } from 'lucide-react';
 import { apiFetch } from '../../../../lib/api-client';
 import { createInvoice, emptyInvoiceForm, type InvoiceFormValues } from '../../../../lib/invoices';
 import { InvoiceForm } from '../../../../components/documents/invoice-form';
+import { usePermissionGuard } from '../../../../lib/use-permission-guard';
 
 /** TICKET-024 — create invoice. */
 export default function NewInvoicePage() {
+  const denied = usePermissionGuard('invoice:write');
   const router = useRouter();
   const queryClient = useQueryClient();
 
@@ -21,6 +23,11 @@ export default function NewInvoicePage() {
         settings: { defaultTaxRate: string; defaultPaymentTermsDays: number } | null;
       }>('/organisations/current'),
   });
+
+  // Checked before every other early return: a denied user should see the
+  // denial immediately, not a loading skeleton or a form they cannot submit.
+  // Placed after the hooks above so hook order stays stable across renders.
+  if (denied) return denied;
 
   async function handleSubmit(values: InvoiceFormValues) {
     const invoice = await createInvoice(values);

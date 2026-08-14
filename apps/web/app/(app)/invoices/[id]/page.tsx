@@ -282,7 +282,7 @@ export default function InvoiceDetailPage() {
       </section>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-1">
+        <Card className="min-w-0 lg:col-span-1">
           <h2 className="text-h4 text-ink">Details</h2>
           <dl className="mt-4 flex flex-col gap-3">
             <Detail label="Customer" value={customerName(invoice.customer)} />
@@ -293,7 +293,7 @@ export default function InvoiceDetailPage() {
           </dl>
         </Card>
 
-        <Card className="p-0 lg:col-span-2">
+        <Card className="min-w-0 p-0 lg:col-span-2">
           <h2 className="border-b border-border p-5 text-h4 text-ink">Items</h2>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] border-collapse">
@@ -351,7 +351,7 @@ export default function InvoiceDetailPage() {
             </table>
           </div>
 
-          <div className="flex justify-end border-t border-border p-5">
+          <div className="flex justify-end overflow-x-auto border-t border-border p-5">
             <table className="min-w-[260px]">
               <caption className="sr-only">Totals</caption>
               <tbody>
@@ -388,7 +388,7 @@ export default function InvoiceDetailPage() {
       </div>
 
       {/* TICKET-033 — payment history against this invoice. */}
-      <Card className="p-0">
+      <Card className="min-w-0 p-0">
         <h2 className="border-b border-border p-5 text-h4 text-ink">Payments</h2>
         {invoice.allocations.length === 0 ? (
           <p className="p-5 text-body text-ink-muted">No payments recorded against this invoice.</p>

@@ -13,9 +13,11 @@ import {
 import { QuotationForm } from '../../../../../components/documents/quotation-form';
 import { Card, ErrorState, TableSkeleton } from '../../../../../components/ui/primitives';
 import { ApiRequestError } from '../../../../../lib/api-client';
+import { usePermissionGuard } from '../../../../../lib/use-permission-guard';
 
 /** TICKET-018 — edit a DRAFT quotation. */
 export default function EditQuotationPage() {
+  const denied = usePermissionGuard('quotation:write');
   const router = useRouter();
   const params = useParams();
   const queryClient = useQueryClient();
@@ -26,6 +28,11 @@ export default function EditQuotationPage() {
     queryFn: () => getQuotation(id),
     enabled: Boolean(id),
   });
+
+  // Checked before every other early return: a denied user should see the
+  // denial immediately, not a loading skeleton or a form they cannot submit.
+  // Placed after the hooks above so hook order stays stable across renders.
+  if (denied) return denied;
 
   async function handleSubmit(values: QuotationFormValues) {
     // Send the version the form was loaded with, so a concurrent edit is

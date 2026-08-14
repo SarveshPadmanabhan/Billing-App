@@ -35,11 +35,23 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Settings', href: '/settings', icon: Settings },
 ];
 
-export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
+export function Sidebar({
+  onNavigate,
+  /**
+   * Distinguishes the two instances. The desktop sidebar and the mobile drawer
+   * both render this component, and when the drawer is open both are in the
+   * DOM — a single shared aria-label would announce two identical
+   * "Main navigation" landmarks to a screen reader.
+   */
+  label = 'Main navigation',
+}: {
+  onNavigate?: () => void;
+  label?: string;
+}) {
   const pathname = usePathname() ?? '';
 
   return (
-    <nav aria-label="Main navigation" className="flex h-full w-[248px] flex-col border-r border-border bg-surface">
+    <nav aria-label={label} className="flex h-full w-[248px] flex-col border-r border-border bg-surface">
       <div className="flex h-16 items-center gap-2 border-b border-border px-5">
         <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-primary text-surface">
           <Receipt className="h-5 w-5" aria-hidden="true" />

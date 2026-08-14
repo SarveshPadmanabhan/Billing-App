@@ -156,7 +156,7 @@ export default function InvoicesPage() {
         <>
           <div className="overflow-hidden rounded-md border border-border bg-surface shadow-card">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[920px] border-collapse">
+              <table className="w-full min-w-[720px] border-collapse">
                 <caption className="sr-only">Invoices</caption>
                 <thead>
                   <tr className="border-b border-border bg-canvas">
@@ -166,9 +166,11 @@ export default function InvoicesPage() {
                     <th scope="col" className="p-4 text-left text-body-sm font-semibold text-ink-secondary">
                       Customer
                     </th>
-                    <th scope="col" className="p-4 text-left text-body-sm font-semibold text-ink-secondary">
-                      Issued
-                    </th>
+                    {/* "Issued" is dropped: it duplicates information the
+                        number already conveys, and at 1024px the sidebar
+                        leaves only ~728px, so seven columns forced horizontal
+                        scrolling on an ordinary laptop. Due date is the one
+                        that drives action. */}
                     <th scope="col" className="p-4 text-left text-body-sm font-semibold text-ink-secondary">
                       Due
                     </th>
@@ -198,9 +200,6 @@ export default function InvoicesPage() {
                         </td>
                         <td className="p-4 text-body text-ink">
                           {invoice.customer ? customerName(invoice.customer) : '—'}
-                        </td>
-                        <td className="p-4 text-body text-ink-secondary">
-                          {formatDate(invoice.issueDate)}
                         </td>
                         <td className="p-4 text-body">
                           <span className={overdue ? 'font-medium text-danger' : 'text-ink-secondary'}>

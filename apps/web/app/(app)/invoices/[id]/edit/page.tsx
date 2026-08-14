@@ -13,9 +13,11 @@ import {
 import { InvoiceForm } from '../../../../../components/documents/invoice-form';
 import { Card, ErrorState, TableSkeleton } from '../../../../../components/ui/primitives';
 import { ApiRequestError } from '../../../../../lib/api-client';
+import { usePermissionGuard } from '../../../../../lib/use-permission-guard';
 
 /** TICKET-027 — edit a DRAFT invoice. */
 export default function EditInvoicePage() {
+  const denied = usePermissionGuard('invoice:write');
   const router = useRouter();
   const params = useParams();
   const queryClient = useQueryClient();
@@ -26,6 +28,11 @@ export default function EditInvoicePage() {
     queryFn: () => getInvoice(id),
     enabled: Boolean(id),
   });
+
+  // Checked before every other early return: a denied user should see the
+  // denial immediately, not a loading skeleton or a form they cannot submit.
+  // Placed after the hooks above so hook order stays stable across renders.
+  if (denied) return denied;
 
   async function handleSubmit(values: InvoiceFormValues) {
     await updateInvoice(id, values, invoice?.version);

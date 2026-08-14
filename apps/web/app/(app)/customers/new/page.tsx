@@ -6,11 +6,18 @@ import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
 import { createCustomer, type CustomerFormValues } from '../../../../lib/customers';
 import { CustomerForm, emptyCustomerForm } from '../../../../components/customers/customer-form';
+import { usePermissionGuard } from '../../../../lib/use-permission-guard';
 
 /** TICKET-010 — create customer. */
 export default function NewCustomerPage() {
+  const denied = usePermissionGuard('customer:write');
   const router = useRouter();
   const queryClient = useQueryClient();
+
+  // Checked before every other early return: a denied user should see the
+  // denial immediately, not a loading skeleton or a form they cannot submit.
+  // Placed after the hooks above so hook order stays stable across renders.
+  if (denied) return denied;
 
   async function handleSubmit(values: CustomerFormValues) {
     const customer = await createCustomer(values);

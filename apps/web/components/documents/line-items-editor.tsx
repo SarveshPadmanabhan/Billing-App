@@ -88,6 +88,9 @@ export function LineItemsEditor({
 
   return (
     <div className="flex flex-col gap-3">
+      {/* The editor is wide by nature (8 columns). It scrolls inside this
+          container rather than pushing the page sideways — Frontend Spec §14
+          allows controlled horizontal scrolling for tables. */}
       <div className="overflow-x-auto">
         <table className="w-full min-w-[860px] border-collapse">
           <caption className="sr-only">Line items</caption>

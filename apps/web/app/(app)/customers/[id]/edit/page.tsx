@@ -13,9 +13,11 @@ import {
 import { CustomerForm, customerToForm } from '../../../../../components/customers/customer-form';
 import { ErrorState, TableSkeleton, Card } from '../../../../../components/ui/primitives';
 import { ApiRequestError } from '../../../../../lib/api-client';
+import { usePermissionGuard } from '../../../../../lib/use-permission-guard';
 
 /** TICKET-011 — edit customer. */
 export default function EditCustomerPage() {
+  const denied = usePermissionGuard('customer:write');
   const router = useRouter();
   const params = useParams();
   const queryClient = useQueryClient();
@@ -26,6 +28,11 @@ export default function EditCustomerPage() {
     queryFn: () => getCustomer(id),
     enabled: Boolean(id),
   });
+
+  // Checked before every other early return: a denied user should see the
+  // denial immediately, not a loading skeleton or a form they cannot submit.
+  // Placed after the hooks above so hook order stays stable across renders.
+  if (denied) return denied;
 
   async function handleSubmit(values: CustomerFormValues) {
     // Pass the timestamp the form was loaded with so a concurrent edit by

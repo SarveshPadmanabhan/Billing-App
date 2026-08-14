@@ -8,9 +8,11 @@ import type { CurrentUserResponse } from '@billing/types';
 import { apiFetch } from '../../../../lib/api-client';
 import { createQuotation, emptyQuotationForm, type QuotationFormValues } from '../../../../lib/quotations';
 import { QuotationForm } from '../../../../components/documents/quotation-form';
+import { usePermissionGuard } from '../../../../lib/use-permission-guard';
 
 /** TICKET-016 — create quotation. */
 export default function NewQuotationPage() {
+  const denied = usePermissionGuard('quotation:write');
   const router = useRouter();
   const queryClient = useQueryClient();
 
@@ -28,6 +30,11 @@ export default function NewQuotationPage() {
         '/organisations/current',
       ),
   });
+
+  // Checked before every other early return: a denied user should see the
+  // denial immediately, not a loading skeleton or a form they cannot submit.
+  // Placed after the hooks above so hook order stays stable across renders.
+  if (denied) return denied;
 
   async function handleSubmit(values: QuotationFormValues) {
     const quotation = await createQuotation(values);

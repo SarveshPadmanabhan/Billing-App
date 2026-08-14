@@ -269,6 +269,6 @@ test.describe('smoke', () => {
     await expect(menuButton).toBeVisible();
 
     await menuButton.click();
-    await expect(page.getByRole('navigation', { name: 'Main navigation' })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Mobile navigation' })).toBeVisible();
   });
 });

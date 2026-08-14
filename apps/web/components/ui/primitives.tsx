@@ -159,7 +159,10 @@ export const Select = forwardRef<HTMLSelectElement, React.SelectHTMLAttributes<H
 
 export function Card({ className, children }: { className?: string; children: React.ReactNode }) {
   return (
-    <div className={clsx('rounded-md border border-border bg-surface p-5 shadow-card', className)}>
+    // min-w-0 is load-bearing: a grid or flex child defaults to min-width:auto,
+    // so wide content (a table, a long number) forces the card past the
+    // viewport instead of letting its inner container scroll.
+    <div className={clsx('min-w-0 rounded-md border border-border bg-surface p-5 shadow-card', className)}>
       {children}
     </div>
   );
