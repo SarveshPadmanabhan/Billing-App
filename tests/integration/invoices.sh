@@ -230,9 +230,9 @@ if is_uuid "$SEED_CUST"; then
     -H 'Content-Type: application/json' -d '{"reason":"Billing cancels a sent invoice"}' | jqp "['data']['status']")" \
     "BILLING may cancel a SENT invoice"
 
-  # The PAID case is covered by unit tests in packages/types; it needs a
-  # recorded payment, which arrives with EPIC 5. Re-verify here afterwards.
-  pass "BILLING PAID-invoice restriction covered by unit tests until EPIC 5"
+  # The PAID-invoice restriction is exercised through the API in
+  # tests/integration/payments.sh section 9, which can record a payment first.
+  pass "BILLING PAID-invoice restriction verified in payments.sh" 
 else
   fail "BILLING scoped cancel" "could not load a seeded customer"
 fi

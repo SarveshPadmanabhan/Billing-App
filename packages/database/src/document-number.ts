@@ -28,7 +28,13 @@ import type { TenantClient } from './client.js';
  * on this row; at MVP scale that is microseconds.)
  */
 
-export type SequenceDocumentType = 'INVOICE' | 'QUOTATION';
+/**
+ * Types that draw from document_sequences.
+ *
+ * PAYMENT is included so payment numbers inherit the same race-safe
+ * generation as invoices and quotations rather than using a separate scheme.
+ */
+export type SequenceDocumentType = 'INVOICE' | 'QUOTATION' | 'PAYMENT';
 
 export interface GeneratedDocumentNumber {
   /** Formatted, e.g. "INV-000042". */
@@ -91,7 +97,12 @@ export function formatDocumentNumber(prefix: string, value: bigint, padding: num
 }
 
 /**
- * Create the INVOICE and QUOTATION sequences for a new organisation.
+ * Create every document sequence a new organisation needs.
+ *
+ * All three types are created up front. A missing sequence surfaces only when
+ * someone tries to create that document, which would be a confusing failure
+ * long after onboarding — nextDocumentNumber deliberately does not auto-create
+ * (doing so under concurrency would just move the race to the insert).
  *
  * current_number is seeded to (startNumber - 1) because nextDocumentNumber
  * pre-increments: a startNumber of 1 stores 0 and the first document is 1.
@@ -102,6 +113,7 @@ export async function createDocumentSequences(
   options: {
     invoicePrefix: string;
     quotationPrefix: string;
+    paymentPrefix?: string;
     invoiceStartNumber: bigint;
     quotationStartNumber: bigint;
     padding: number;
@@ -126,6 +138,14 @@ export async function createDocumentSequences(
         prefix: options.quotationPrefix,
         padding: options.padding,
         currentNumber: options.quotationStartNumber - 1n,
+      },
+      {
+        organisationId,
+        documentType: 'PAYMENT',
+        prefix: options.paymentPrefix ?? 'PAY-',
+        padding: options.padding,
+        // Payments always start at 1; there is no configurable start number.
+        currentNumber: 0n,
       },
     ],
     skipDuplicates: true,

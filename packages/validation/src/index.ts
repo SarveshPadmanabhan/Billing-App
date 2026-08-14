@@ -4,3 +4,4 @@ export * from './calculation.js';
 export * from './customer.js';
 export * from './quotation.js';
 export * from './invoice.js';
+export * from './payment.js';

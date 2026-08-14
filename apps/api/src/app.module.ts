@@ -12,6 +12,8 @@ import { QuotationsController } from './quotations/quotations.controller.js';
 import { QuotationsService } from './quotations/quotations.service.js';
 import { InvoicesController } from './invoices/invoices.controller.js';
 import { InvoicesService } from './invoices/invoices.service.js';
+import { PaymentsController } from './payments/payments.controller.js';
+import { PaymentsService } from './payments/payments.service.js';
 import { PdfService } from './documents/pdf.service.js';
 import { StorageService } from './documents/storage.service.js';
 
@@ -38,6 +40,7 @@ const env = loadServerEnv();
     CustomersController,
     QuotationsController,
     InvoicesController,
+    PaymentsController,
   ],
   providers: [
     {
@@ -48,6 +51,7 @@ const env = loadServerEnv();
     CustomersService,
     QuotationsService,
     InvoicesService,
+    PaymentsService,
     StorageService,
     PdfService,
 

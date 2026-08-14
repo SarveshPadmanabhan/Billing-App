@@ -462,6 +462,12 @@ async function seedDocuments(organisationId: string, userId: string) {
       where: { organisationId, documentType: 'INVOICE' },
       data: { currentNumber: sequences.invoice },
     });
+    // Two payments are seeded below; advance past them so an API-recorded
+    // payment cannot collide with a seeded number.
+    await tx.documentSequence.updateMany({
+      where: { organisationId, documentType: 'PAYMENT' },
+      data: { currentNumber: 2 },
+    });
 
     console.log(
       `  documents: ${sequences.quotation} quotations, ${sequences.invoice} invoices, 2 payments`,
@@ -520,6 +526,7 @@ async function seedOrganisation(input: SeedOrgInput) {
           create: [
             { documentType: 'INVOICE', prefix: input.invoicePrefix, padding: 6, currentNumber: 0n },
             { documentType: 'QUOTATION', prefix: input.quotationPrefix, padding: 6, currentNumber: 0n },
+            { documentType: 'PAYMENT', prefix: 'PAY-', padding: 6, currentNumber: 0n },
           ],
         },
       },
