@@ -213,12 +213,20 @@ as well as behaviour:
 | `payments.sh` | Idempotency, overpayment rejection, voiding, and three concurrency races |
 | `search.sh` | Global search across all three types, combined filters, tenant scoping |
 | `pdf.sh` | Content-hash caching, concurrent generation, signed-URL access control |
+| `integrity.sh` | Audits database state directly — balances against the ledger, totals against line items, numbering, cross-tenant references |
 
 **E2E** (`tests/e2e/*.spec.ts`) — a small Playwright suite over the critical
 path. It exists because API-level tests once passed while the app was
 completely broken in a browser: a CORS preflight misconfiguration blocked
 every sign-in, and curl does not send preflights. Keep it fast and keep it
 running.
+
+`integrity.sh` is different from the others: it exercises no endpoints, it
+audits the resulting state. It catches drift regardless of cause — a bug, a
+partial failure, or a careless manual repair — and runs last, after the other
+suites have generated data. It connects as a superuser because an audit must
+see every tenant, and it self-checks that it can read rows before trusting any
+result: a query that silently fails would otherwise report zero violations.
 
 Concurrency guarantees are covered by tests that actually run concurrently —
 see [ADR-009](docs/architecture/adr/009-concurrency-on-shared-state.md), which
