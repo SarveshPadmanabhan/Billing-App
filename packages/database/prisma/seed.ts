@@ -139,6 +139,12 @@ async function main() {
     ],
   });
 
+  // --- Documents ------------------------------------------------------------
+  // Realistic quotations and invoices across the lifecycle, so the customer
+  // detail page, invoice list and (later) dashboard have something meaningful
+  // to render rather than empty states.
+  await seedDocuments(ORG_A_ID, owner.id);
+
   console.log('\nSeed complete.\n');
   console.log('  Organisation A — Acme Consulting');
   console.log('    owner@acme.test    OWNER    DevPassword123!');
@@ -147,6 +153,320 @@ async function main() {
   console.log('  Organisation B — Globex Corporation');
   console.log('    owner@globex.test  OWNER    DevPassword123!');
   console.log('\n  Org B exists so cross-tenant leaks show up in normal dev use.');
+}
+
+/**
+ * Line-item shape for seeding. Amounts are pre-computed here rather than run
+ * through the calculation engine: the seed writes directly to the database and
+ * these values are checked against the engine's rules in its own tests.
+ */
+interface SeedItem {
+  description: string;
+  quantity: string;
+  unit?: string;
+  unitPrice: string;
+  taxRate: string;
+}
+
+/** Line totals for a set of items at a single tax rate. */
+function computeTotals(items: SeedItem[]) {
+  let subtotal = 0;
+  let tax = 0;
+  const lines = items.map((item, index) => {
+    const net = Number(item.quantity) * Number(item.unitPrice);
+    const lineTax = (net * Number(item.taxRate)) / 100;
+    subtotal += net;
+    tax += lineTax;
+    return {
+      position: index + 1,
+      description: item.description,
+      quantity: item.quantity,
+      unit: item.unit ?? null,
+      unitPrice: item.unitPrice,
+      discountRate: '0',
+      discountAmount: '0',
+      taxRate: item.taxRate,
+      taxAmount: lineTax.toFixed(4),
+      lineTotal: (net + lineTax).toFixed(4),
+    };
+  });
+  return {
+    lines,
+    subtotal: subtotal.toFixed(4),
+    taxAmount: tax.toFixed(4),
+    totalAmount: (subtotal + tax).toFixed(4),
+  };
+}
+
+const daysFromNow = (days: number) => {
+  const now = new Date();
+  const base = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return new Date(base + days * 86_400_000);
+};
+
+/**
+ * Seed quotations, invoices and payments covering the states the UI must
+ * render: draft, sent, accepted-and-converted, paid, partially paid, overdue
+ * and cancelled.
+ */
+async function seedDocuments(organisationId: string, userId: string) {
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT set_config('app.current_organisation_id', ${organisationId}, true)`;
+    await tx.$executeRaw`SELECT set_config('app.current_user_id', ${userId}, true)`;
+
+    // Idempotent: skip if documents already exist for this organisation.
+    const existing = await tx.invoice.count({ where: { organisationId } });
+    if (existing > 0) {
+      console.log('  documents already seeded, skipping');
+      return;
+    }
+
+    const customers = await tx.customer.findMany({
+      where: { organisationId },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, companyName: true },
+    });
+    if (customers.length < 2) return;
+
+    const [northwind, contoso] = customers;
+    const sequences = { quotation: 0, invoice: 0 };
+    const nextNumber = (kind: 'quotation' | 'invoice') => {
+      sequences[kind] += 1;
+      const prefix = kind === 'invoice' ? 'INV-' : 'QUO-';
+      return `${prefix}${String(sequences[kind]).padStart(6, '0')}`;
+    };
+
+    // --- Quotations ---------------------------------------------------------
+    const draftQuote = computeTotals([
+      { description: 'Discovery workshop', quantity: '2', unit: 'days', unitPrice: '40000', taxRate: '18' },
+    ]);
+    await tx.quotation.create({
+      data: {
+        organisationId,
+        customerId: northwind!.id,
+        quotationNumber: nextNumber('quotation'),
+        issueDate: daysFromNow(-3),
+        validUntil: daysFromNow(27),
+        status: 'DRAFT',
+        currencyCode: 'INR',
+        subtotal: draftQuote.subtotal,
+        taxAmount: draftQuote.taxAmount,
+        totalAmount: draftQuote.totalAmount,
+        notes: 'Scope to be confirmed after the workshop.',
+        createdBy: userId,
+        items: { create: draftQuote.lines },
+      },
+    });
+
+    const sentQuote = computeTotals([
+      { description: 'Platform integration', quantity: '15', unit: 'days', unitPrice: '35000', taxRate: '18' },
+      { description: 'Documentation', quantity: '1', unitPrice: '50000', taxRate: '18' },
+    ]);
+    await tx.quotation.create({
+      data: {
+        organisationId,
+        customerId: contoso!.id,
+        quotationNumber: nextNumber('quotation'),
+        issueDate: daysFromNow(-10),
+        validUntil: daysFromNow(20),
+        status: 'SENT',
+        currencyCode: 'INR',
+        subtotal: sentQuote.subtotal,
+        taxAmount: sentQuote.taxAmount,
+        totalAmount: sentQuote.totalAmount,
+        sentAt: daysFromNow(-10),
+        createdBy: userId,
+        items: { create: sentQuote.lines },
+      },
+    });
+
+    // --- Invoices -----------------------------------------------------------
+
+    // Fully paid.
+    const paid = computeTotals([
+      { description: 'Monthly retainer — June', quantity: '1', unitPrice: '120000', taxRate: '18' },
+    ]);
+    const paidInvoice = await tx.invoice.create({
+      data: {
+        organisationId,
+        customerId: northwind!.id,
+        invoiceNumber: nextNumber('invoice'),
+        issueDate: daysFromNow(-60),
+        dueDate: daysFromNow(-30),
+        status: 'PAID',
+        currencyCode: 'INR',
+        subtotal: paid.subtotal,
+        taxAmount: paid.taxAmount,
+        totalAmount: paid.totalAmount,
+        amountPaid: paid.totalAmount,
+        amountDue: '0',
+        paidAt: daysFromNow(-32),
+        sentAt: daysFromNow(-60),
+        createdBy: userId,
+        items: { create: paid.lines },
+      },
+    });
+
+    // Partially paid.
+    const partial = computeTotals([
+      { description: 'Monthly retainer — July', quantity: '1', unitPrice: '120000', taxRate: '18' },
+      { description: 'Additional support hours', quantity: '12', unit: 'hrs', unitPrice: '3500', taxRate: '18' },
+    ]);
+    const partialPaidAmount = 100000;
+    const partialInvoice = await tx.invoice.create({
+      data: {
+        organisationId,
+        customerId: northwind!.id,
+        invoiceNumber: nextNumber('invoice'),
+        issueDate: daysFromNow(-25),
+        dueDate: daysFromNow(5),
+        status: 'PARTIALLY_PAID',
+        currencyCode: 'INR',
+        subtotal: partial.subtotal,
+        taxAmount: partial.taxAmount,
+        totalAmount: partial.totalAmount,
+        amountPaid: partialPaidAmount.toFixed(4),
+        amountDue: (Number(partial.totalAmount) - partialPaidAmount).toFixed(4),
+        sentAt: daysFromNow(-25),
+        createdBy: userId,
+        items: { create: partial.lines },
+      },
+    });
+
+    // Overdue — past due date with a balance outstanding.
+    const overdue = computeTotals([
+      { description: 'Implementation phase 1', quantity: '1', unitPrice: '250000', taxRate: '18' },
+    ]);
+    await tx.invoice.create({
+      data: {
+        organisationId,
+        customerId: contoso!.id,
+        invoiceNumber: nextNumber('invoice'),
+        issueDate: daysFromNow(-75),
+        dueDate: daysFromNow(-45),
+        status: 'OVERDUE',
+        currencyCode: 'INR',
+        subtotal: overdue.subtotal,
+        taxAmount: overdue.taxAmount,
+        totalAmount: overdue.totalAmount,
+        amountPaid: '0',
+        amountDue: overdue.totalAmount,
+        sentAt: daysFromNow(-75),
+        createdBy: userId,
+        items: { create: overdue.lines },
+      },
+    });
+
+    // Draft.
+    const draftInvoice = computeTotals([
+      { description: 'Monthly retainer — August', quantity: '1', unitPrice: '120000', taxRate: '18' },
+    ]);
+    await tx.invoice.create({
+      data: {
+        organisationId,
+        customerId: northwind!.id,
+        invoiceNumber: nextNumber('invoice'),
+        issueDate: daysFromNow(0),
+        dueDate: daysFromNow(30),
+        status: 'DRAFT',
+        currencyCode: 'INR',
+        subtotal: draftInvoice.subtotal,
+        taxAmount: draftInvoice.taxAmount,
+        totalAmount: draftInvoice.totalAmount,
+        amountPaid: '0',
+        amountDue: draftInvoice.totalAmount,
+        createdBy: userId,
+        items: { create: draftInvoice.lines },
+      },
+    });
+
+    // Cancelled — kept in history, owes nothing.
+    const cancelled = computeTotals([
+      { description: 'Duplicate billing run', quantity: '1', unitPrice: '15000', taxRate: '18' },
+    ]);
+    await tx.invoice.create({
+      data: {
+        organisationId,
+        customerId: contoso!.id,
+        invoiceNumber: nextNumber('invoice'),
+        issueDate: daysFromNow(-20),
+        dueDate: daysFromNow(10),
+        status: 'CANCELLED',
+        currencyCode: 'INR',
+        subtotal: cancelled.subtotal,
+        taxAmount: cancelled.taxAmount,
+        totalAmount: cancelled.totalAmount,
+        amountPaid: '0',
+        amountDue: '0',
+        cancelledAt: daysFromNow(-19),
+        cancelledReason: 'Raised in error — duplicate of the July retainer.',
+        sentAt: daysFromNow(-20),
+        createdBy: userId,
+        items: { create: cancelled.lines },
+      },
+    });
+
+    // --- Payments -----------------------------------------------------------
+    // Allocated against the invoices above so balances reconcile.
+    const fullPayment = await tx.payment.create({
+      data: {
+        organisationId,
+        customerId: northwind!.id,
+        paymentNumber: 'PAY-000001',
+        paymentDate: daysFromNow(-32),
+        amount: paid.totalAmount,
+        currencyCode: 'INR',
+        paymentMethod: 'BANK_TRANSFER',
+        reference: 'NEFT/2026/0612',
+        status: 'RECORDED',
+        createdBy: userId,
+      },
+    });
+    await tx.paymentAllocation.create({
+      data: {
+        paymentId: fullPayment.id,
+        invoiceId: paidInvoice.id,
+        allocatedAmount: paid.totalAmount,
+      },
+    });
+
+    const partPayment = await tx.payment.create({
+      data: {
+        organisationId,
+        customerId: northwind!.id,
+        paymentNumber: 'PAY-000002',
+        paymentDate: daysFromNow(-12),
+        amount: partialPaidAmount.toFixed(4),
+        currencyCode: 'INR',
+        paymentMethod: 'UPI',
+        reference: 'UPI/554120993',
+        status: 'RECORDED',
+        createdBy: userId,
+      },
+    });
+    await tx.paymentAllocation.create({
+      data: {
+        paymentId: partPayment.id,
+        invoiceId: partialInvoice.id,
+        allocatedAmount: partialPaidAmount.toFixed(4),
+      },
+    });
+
+    // Advance the document sequences past the numbers used above, or the first
+    // document created through the API would collide with a seeded one.
+    await tx.documentSequence.updateMany({
+      where: { organisationId, documentType: 'QUOTATION' },
+      data: { currentNumber: sequences.quotation },
+    });
+    await tx.documentSequence.updateMany({
+      where: { organisationId, documentType: 'INVOICE' },
+      data: { currentNumber: sequences.invoice },
+    });
+
+    console.log(
+      `  documents: ${sequences.quotation} quotations, ${sequences.invoice} invoices, 2 payments`,
+    );
+  });
 }
 
 interface SeedOrgInput {
