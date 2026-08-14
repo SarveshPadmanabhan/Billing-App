@@ -68,6 +68,57 @@ Current coverage:
 | Numbering | `packages/database/src/document-number.test.ts` | 64 concurrent → 64 unique, gapless |
 | Conversion | `tests/integration/quotations.sh` | 8 concurrent → exactly 1 invoice |
 | PDF | `tests/integration/pdf.sh` | 10 concurrent → exactly 1 document row |
+| Payment recording | `tests/integration/payments.sh` §5 | 10 concurrent × 200 vs 1000 balance → exactly 5 succeed, never negative |
+| Double void | `tests/integration/payments.sh` §7 | 4 concurrent voids → exactly 1 succeeds, reversed once |
+| Void vs. payment | `tests/integration/payments.sh` §8 | Balance matches surviving RECORDED allocations under either interleaving |
+
+## Companion principle: derive balances from the ledger, never increment them
+
+Locking makes concurrent writes *ordered*. It does not make a running total
+*correct* — that needs a second rule.
+
+**Any stored financial aggregate is recomputed from its underlying rows inside
+the transaction that changes them. It is never adjusted by a delta.**
+
+Concretely, recording or voiding a payment does not do:
+
+```ts
+amountPaid = amountPaid + payment.amount   // WRONG
+```
+
+It does:
+
+```ts
+amountPaid = sum(allocations where payment.status = 'RECORDED')   // RIGHT
+```
+
+Why this matters more than it first appears:
+
+- **An increment is only correct if every prior write was.** One bad delta —
+  from a bug since fixed, a partial failure, a manual repair — is baked in
+  permanently and every later increment carries it forward. A recomputation
+  is self-correcting: the next write repairs the stored value from the source
+  rows.
+- **It makes concurrent outcomes order-independent.** In the void-racing-a-
+  payment test, both operations committed. Because each recomputed from the
+  ledger rather than applying its own delta, the final `amountPaid` was
+  correct regardless of which ran second. With increments, the answer would
+  depend on interleaving.
+- **The stored value stays auditable.** `amountPaid` is a cache of the
+  allocation rows, so the two can be compared and any disagreement is a
+  detectable bug rather than an invisible one. The payment tests assert this
+  agreement explicitly.
+
+Stored aggregates governed by this rule today: `invoices.amount_paid` and
+`invoices.amount_due`, via `PaymentsService.applyBalance`, which is the single
+definition of both. Anything added later that touches them — credit notes,
+refunds, write-offs, multi-invoice allocation — must call through that same
+path rather than adjusting the columns directly.
+
+The columns are still stored rather than computed on read: the dashboard,
+reports and invoice list must agree with each other and stay fast. Storing the
+figure is a performance decision; deriving it on every write is the
+correctness decision that makes storing it safe.
 
 ## Consequences
 
@@ -79,3 +130,5 @@ Current coverage:
 - Anything added later that touches shared document or sequence state
   (credit notes, receipt numbering, recurring invoices) must follow this
   pattern and ship its own concurrent test.
+- Anything that changes a stored financial aggregate must recompute it from
+  the source rows, per the companion principle above.

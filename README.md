@@ -6,7 +6,9 @@ payments, PDFs and reporting.
 This is a financial application. Data integrity, tenant isolation and
 auditability take precedence over delivery speed.
 
-**Status: Phase 1 (Foundation) complete — TICKET-001 through TICKET-008.**
+**Status:** Phase 1 (Foundation) complete — TICKET-001…008.
+Phase 2 in progress — customers, quotations, invoices, payments and PDFs
+(TICKET-009…035) are done; search and filters (036, 037) remain.
 
 ---
 
@@ -185,19 +187,42 @@ ordinary development, not only under a special test fixture.
 
 ## Testing
 
-```bash
-pnpm test                                        # unit + integration
-pnpm --filter @billing/database test             # numbering, incl. concurrency
-pnpm --filter @billing/validation test           # money arithmetic
-pnpm --filter @billing/types test                # permission matrix
+Three layers, each catching what the others cannot.
 
-bash tests/integration/tenant-isolation.sh       # needs API running
+```bash
+pnpm test              # unit — pure logic, no I/O
+pnpm test:integration  # HTTP API against a real database (needs API on :4000)
+pnpm test:e2e          # real browser (needs API and web running)
+pnpm test:all          # all three
 ```
 
-The tenant-isolation suite drives the real HTTP API against a real database.
-It requires the API on `:4000` and covers: cross-tenant list leakage, direct
-fetch by a known foreign UUID, forged organisation identifiers in header/query/
-body, organisation switching without membership, and unauthenticated access.
+**Unit** (`packages/*/src/*.test.ts`) — money arithmetic, the calculation
+engine, the permission matrix, and document numbering under 64-way
+concurrency.
+
+**Integration** (`tests/integration/*.sh`) — each drives the real HTTP API
+against a real database, with two organisations, and asserts tenant isolation
+as well as behaviour:
+
+| Suite | Covers |
+| --- | --- |
+| `tenant-isolation.sh` | Cross-tenant leakage, foreign UUIDs, forged organisation ids, unauthenticated access |
+| `customers.sh` | CRUD, search, archive-not-delete, optimistic concurrency |
+| `quotations.sh` | Lifecycle, server-side totals, duplicate, conversion incl. 8-way concurrent conversion |
+| `invoices.sh` | Lifecycle, cancel-not-delete, overdue detection, BILLING scoped cancel |
+| `payments.sh` | Idempotency, overpayment rejection, voiding, and three concurrency races |
+| `pdf.sh` | Content-hash caching, concurrent generation, signed-URL access control |
+
+**E2E** (`tests/e2e/*.spec.ts`) — a small Playwright suite over the critical
+path. It exists because API-level tests once passed while the app was
+completely broken in a browser: a CORS preflight misconfiguration blocked
+every sign-in, and curl does not send preflights. Keep it fast and keep it
+running.
+
+Concurrency guarantees are covered by tests that actually run concurrently —
+see [ADR-009](docs/architecture/adr/009-concurrency-on-shared-state.md), which
+also records the "derive balances from the ledger, never increment them"
+principle that any future work on stored money aggregates must follow.
 
 ## Layout
 
@@ -216,6 +241,44 @@ tests/
 docs/
   architecture/adr/
 ```
+
+## Writing migrations
+
+Two things bite in this schema specifically.
+
+**Tenant-scoped tables need per-organisation context, even for the owner.**
+Every table under RLS uses `FORCE ROW LEVEL SECURITY`, so `billing_owner` is
+subject to the policies too. A bulk statement across organisations therefore
+inserts **zero rows, silently and without error**:
+
+```sql
+-- WRONG: no tenant context, WITH CHECK rejects every row, exit code 0
+INSERT INTO document_sequences (organisation_id, document_type, ...)
+SELECT o.id, 'PAYMENT', ... FROM organisations o;
+```
+
+Loop and set the context instead:
+
+```sql
+DO $$
+DECLARE org RECORD;
+BEGIN
+  FOR org IN SELECT id FROM organisations LOOP
+    PERFORM set_config('app.current_organisation_id', org.id::text, true);
+    INSERT INTO document_sequences (...) VALUES (org.id, ...)
+      ON CONFLICT DO NOTHING;
+  END LOOP;
+END;
+$$;
+```
+
+`20260814140000_payment_number_sequence` is the worked example. Always verify a
+back-fill by counting rows afterwards *with* tenant context set — an unscoped
+`SELECT count(*)` reports 0 whether the insert worked or not.
+
+**`ALTER TYPE ... ADD VALUE` cannot run inside a transaction** on PostgreSQL
+below 12, and Prisma wraps migrations in one. Adding an enum value may need to
+be applied separately and the migration then recorded as applied.
 
 ## Security model
 

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, Pencil, Send, Copy, FileDown, Ban, AlertTriangle } from 'lucide-react';
+import { ChevronLeft, Pencil, Send, Copy, FileDown, Ban, AlertTriangle, Banknote, Undo2 } from 'lucide-react';
 import type { CurrentUserResponse } from '@billing/types';
 import { hasPermission } from '@billing/types';
 import { apiFetch, ApiRequestError } from '../../../../lib/api-client';
@@ -18,6 +18,8 @@ import {
   INVOICE_STATUS_TONE,
 } from '../../../../lib/invoices';
 import { customerName } from '../../../../lib/customers';
+import { voidPayment, paymentMethodLabel } from '../../../../lib/payments';
+import { RecordPaymentDialog } from '../../../../components/payments/record-payment-dialog';
 import {
   Button,
   Card,
@@ -34,14 +36,6 @@ import {
 const humanStatus = (s: string) =>
   s.replace(/_/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase());
 
-/**
- * Payment methods read as labels, not sentences: "UPI" and "Bank transfer",
- * never "Upi". Acronyms stay upper-case.
- */
-const ACRONYM_METHODS = new Set(['UPI']);
-const humanMethod = (method: string) =>
-  ACRONYM_METHODS.has(method) ? method : humanStatus(method);
-
 const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
@@ -51,7 +45,9 @@ export default function InvoiceDetailPage() {
   const queryClient = useQueryClient();
   const id = String(params?.id ?? '');
 
-  const [dialog, setDialog] = useState<'send' | 'cancel' | null>(null);
+  const [dialog, setDialog] = useState<'send' | 'cancel' | 'void' | null>(null);
+  const [payOpen, setPayOpen] = useState(false);
+  const [voidTarget, setVoidTarget] = useState<{ id: string; number: string } | null>(null);
   const [reason, setReason] = useState('');
   const [reasonError, setReasonError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
@@ -75,6 +71,10 @@ export default function InvoiceDetailPage() {
   // cancel a draft or sent invoice but not one that has been paid — so a 403
   // here is expected and surfaced rather than pre-empted.
   const canCancel = role ? hasPermission(role, 'invoice:cancel') : false;
+  const canRecordPayment = role ? hasPermission(role, 'payment:record') : false;
+  // Base grant only — BILLING may void just the payments it recorded, which
+  // the server checks against the loaded record.
+  const canVoid = role ? hasPermission(role, 'payment:void') : false;
 
   async function run(action: () => Promise<unknown>, onDone?: () => void) {
     setWorking(true);
@@ -196,6 +196,13 @@ export default function InvoiceDetailPage() {
               <Button onClick={() => setDialog('send')}>
                 <Send className="h-4 w-4" aria-hidden="true" />
                 Send
+              </Button>
+            )}
+
+            {canRecordPayment && actions.canRecordPayment && (
+              <Button onClick={() => setPayOpen(true)}>
+                <Banknote className="h-4 w-4" aria-hidden="true" />
+                Record payment
               </Button>
             )}
 
@@ -406,6 +413,9 @@ export default function InvoiceDetailPage() {
                   <th scope="col" className="p-4 text-right text-body-sm font-semibold text-ink-secondary">
                     Applied
                   </th>
+                  <th scope="col" className="p-4">
+                    <span className="sr-only">Actions</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -421,7 +431,7 @@ export default function InvoiceDetailPage() {
                       {formatDate(allocation.payment.paymentDate)}
                     </td>
                     <td className="p-4 text-body text-ink-secondary">
-                      {humanMethod(allocation.payment.paymentMethod)}
+                      {paymentMethodLabel(allocation.payment.paymentMethod)}
                     </td>
                     <td className="p-4 text-body text-ink-secondary">
                       {allocation.payment.reference ?? '—'}
@@ -431,6 +441,25 @@ export default function InvoiceDetailPage() {
                         amount={allocation.allocatedAmount}
                         currency={invoice.currencyCode}
                       />
+                    </td>
+                    <td className="p-4 text-right">
+                      {canVoid && allocation.payment.status === 'RECORDED' && (
+                        <Button
+                          variant="ghost"
+                          onClick={() => {
+                            setVoidTarget({
+                              id: allocation.payment.id,
+                              number: allocation.payment.paymentNumber,
+                            });
+                            setReason('');
+                            setReasonError(null);
+                            setDialog('void');
+                          }}
+                        >
+                          <Undo2 className="h-4 w-4" aria-hidden="true" />
+                          Void
+                        </Button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -460,6 +489,88 @@ export default function InvoiceDetailPage() {
           )}
         </Card>
       )}
+
+      <RecordPaymentDialog
+        open={payOpen}
+        onClose={() => setPayOpen(false)}
+        invoiceId={invoice.id}
+        invoiceNumber={invoice.invoiceNumber}
+        amountDue={invoice.amountDue}
+        currency={invoice.currencyCode}
+        onRecorded={({ replayed }) => {
+          void queryClient.invalidateQueries({ queryKey: ['invoices'] });
+          void queryClient.invalidateQueries({ queryKey: ['payments'] });
+          if (replayed) {
+            setActionError('That payment had already been recorded.');
+          }
+        }}
+      />
+
+      <Modal
+        open={dialog === 'void'}
+        onClose={() => {
+          setDialog(null);
+          setVoidTarget(null);
+          setReasonError(null);
+        }}
+        title={`Void ${voidTarget?.number ?? 'payment'}?`}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setDialog(null);
+                setVoidTarget(null);
+                setReasonError(null);
+              }}
+              disabled={working}
+            >
+              Keep it
+            </Button>
+            <Button
+              variant="destructive"
+              loading={working}
+              onClick={() => {
+                if (!reason.trim()) {
+                  setReasonError('A reason is required to void a payment');
+                  return;
+                }
+                setReasonError(null);
+                const target = voidTarget;
+                if (!target) return;
+                void run(
+                  () => voidPayment(target.id, reason),
+                  () => setVoidTarget(null),
+                );
+              }}
+            >
+              Void payment
+            </Button>
+          </>
+        }
+      >
+        <p>
+          The payment will be marked as voided and this invoice&apos;s balance recalculated. The
+          payment record is kept for audit — payments are never deleted.
+        </p>
+        <div className="mt-4">
+          <label htmlFor="void-reason" className="text-body-sm font-medium text-ink">
+            Reason <span className="text-danger">*</span>
+          </label>
+          <Input
+            id="void-reason"
+            value={reason}
+            invalid={Boolean(reasonError)}
+            onChange={(e) => setReason(e.target.value)}
+            className="mt-2"
+          />
+          {reasonError && (
+            <p role="alert" className="mt-1 text-caption text-danger">
+              {reasonError}
+            </p>
+          )}
+        </div>
+      </Modal>
 
       <Modal
         open={dialog === 'send'}
