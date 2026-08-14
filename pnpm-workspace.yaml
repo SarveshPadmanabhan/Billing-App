@@ -1,0 +1,36 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+allowBuilds:
+  # vitest's bundler; needs its postinstall to fetch the platform binary.
+  esbuild: true
+  # Prisma downloads its query/migration engine binaries on install.
+  '@prisma/client': true
+  '@prisma/engines': true
+  prisma: true
+  # Postinstall only prints a funding notice; nothing is built.
+  '@nestjs/core': false
+  # Next.js image optimisation; needs its native binary.
+  sharp: true
+  # BullMQ's msgpack codec; optional native accelerator.
+  msgpackr-extract: false
+
+# Force a single React instance across the workspace. Two copies (one pulled in
+# transitively) break hooks at build time with "Cannot read properties of null
+# (reading 'useState')", because the renderer and the component resolve
+# different react modules.
+overrides:
+  react: 19.0.0
+  react-dom: 19.0.0
+  # better-auth declares `next` as an optional peer, so apps/api resolved a
+  # second Next (15.5.23) alongside the web app's 15.1.3. Two Next copies in
+  # one workspace break the App Router /404 prerender with
+  # "<Html> should not be imported outside of pages/_document".
+  next: 15.5.23
+
+# better-auth lists `next` as an optional peer. apps/api does not use Next at
+# all, so the peer is declared unmet there rather than letting pnpm resolve a
+# second Next copy into the workspace.
+peerDependencyRules:
+  ignoreMissing:
+    - next

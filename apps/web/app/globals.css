@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * Design tokens — Frontend Specification Document §4, §6, §36.
+ * Defined centrally so values are never scattered through components.
+ */
+@layer base {
+  :root {
+    /* Colour */
+    --color-primary: #2563eb;
+    --color-primary-hover: #1d4ed8;
+    --color-primary-light: #eff6ff;
+
+    --color-success: #16a34a;
+    --color-success-light: #f0fdf4;
+    --color-warning: #d97706;
+    --color-warning-light: #fffbeb;
+    --color-danger: #dc2626;
+    --color-danger-light: #fef2f2;
+    --color-info: #0284c7;
+    --color-info-light: #f0f9ff;
+
+    --color-background: #f8fafc;
+    --color-surface: #ffffff;
+    --color-border: #e2e8f0;
+    --color-border-strong: #cbd5e1;
+
+    --color-text: #0f172a;
+    --color-text-secondary: #475569;
+    --color-muted: #64748b;
+    --color-disabled: #94a3b8;
+
+    /* Radius */
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 12px;
+
+    /* Spacing (4px scale) */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-6: 24px;
+    --space-8: 32px;
+
+    /* Shadow */
+    --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.05);
+    --shadow-modal: 0 20px 40px rgba(15, 23, 42, 0.15);
+  }
+
+  html {
+    font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-text);
+    font-size: 14px; /* Body */
+    line-height: 1.5;
+  }
+
+  /* Financial figures use tabular numerals so columns align (Spec §5). */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  /* Visible focus for keyboard users — WCAG 2.2 AA (Spec §15). */
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+}

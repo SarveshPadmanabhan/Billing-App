@@ -1,0 +1,637 @@
+// Billing Platform — database schema
+// Source of truth: Technical Architecture Document §7–9.
+//
+// Conventions:
+//   - snake_case table and column names via @map/@@map (Postgres idiom);
+//     camelCase in the generated TypeScript client.
+//   - Every organisation-owned table carries organisation_id (Rule 1) and is
+//     indexed on it, because every query filters by it.
+//   - Money is Decimal @db.Decimal(19, 4). Never Float.
+//   - Deletion of financial history is blocked at the FK level with Restrict;
+//     lifecycle transitions (cancel/void/archive) are the only path.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["relationJoins"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_MIGRATION_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum OrganisationRole {
+  OWNER
+  ADMIN
+  BILLING
+  SALES
+  VIEWER
+
+  @@map("organisation_role")
+}
+
+enum DocumentNumberType {
+  INVOICE
+  QUOTATION
+
+  @@map("document_number_type")
+}
+
+enum CustomerType {
+  INDIVIDUAL
+  COMPANY
+
+  @@map("customer_type")
+}
+
+enum QuotationStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  CONVERTED
+  CANCELLED
+
+  @@map("quotation_status")
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+
+  @@map("invoice_status")
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  CARD
+  CHEQUE
+  UPI
+  OTHER
+
+  @@map("payment_method")
+}
+
+enum PaymentStatus {
+  RECORDED
+  VOIDED
+
+  @@map("payment_status")
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  IN_APP
+
+  @@map("notification_channel")
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  DELIVERED
+  BOUNCED
+  FAILED
+
+  @@map("notification_status")
+}
+
+// ---------------------------------------------------------------------------
+// Identity — Better Auth owns credentials; this app owns profile + membership.
+//
+// Deviation from Tech Arch Doc §8: users.password_hash and the refresh_tokens
+// table are absent. Better Auth stores credentials in `account` and sessions in
+// `session` (both below). Keeping a second password column would duplicate
+// credential storage, which Frontend Spec §25 explicitly forbids.
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String    @id @default(uuid()) @db.Uuid
+  email         String    @unique @db.VarChar(255)
+  emailVerified Boolean   @default(false) @map("email_verified")
+  firstName     String    @map("first_name") @db.VarChar(100)
+  lastName      String?   @map("last_name") @db.VarChar(100)
+  phone         String?   @db.VarChar(30)
+  avatarUrl     String?   @map("avatar_url")
+  isActive      Boolean   @default(true) @map("is_active")
+  emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz(6)
+  lastLoginAt   DateTime? @map("last_login_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Better Auth requires a `name` field; kept in sync with first/last name.
+  name String @db.VarChar(201)
+
+  memberships   OrganisationMember[]
+  sessions      Session[]
+  accounts      Account[]
+  auditLogs     AuditLog[]
+  notifications Notification[]
+
+  @@index([email])
+  @@map("users")
+}
+
+/// Better Auth session table. Replaces refresh_tokens from the architecture doc.
+model Session {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  token     String   @unique @db.VarChar(512)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  ipAddress String?  @map("ip_address") @db.VarChar(64)
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  /// Currently selected organisation. Server-controlled: set only by the
+  /// organisation-switch endpoint after membership is verified. A client
+  /// cannot set this, which is what stops org-ID forgery at the session layer.
+  activeOrganisationId String? @map("active_organisation_id") @db.Uuid
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+/// Better Auth credential/provider table. Password hashes live here (scrypt by
+/// default), never in `users`.
+model Account {
+  id                    String    @id @default(uuid()) @db.Uuid
+  userId                String    @map("user_id") @db.Uuid
+  accountId             String    @map("account_id") @db.VarChar(255)
+  providerId            String    @map("provider_id") @db.VarChar(64)
+  accessToken           String?   @map("access_token")
+  refreshToken          String?   @map("refresh_token")
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at") @db.Timestamptz(6)
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at") @db.Timestamptz(6)
+  scope                 String?
+  idToken               String?   @map("id_token")
+  password              String?
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+/// Better Auth verification tokens (email verification, password reset).
+model Verification {
+  id         String   @id @default(uuid()) @db.Uuid
+  identifier String   @db.VarChar(255)
+  value      String   @db.VarChar(512)
+  expiresAt  DateTime @map("expires_at") @db.Timestamptz(6)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([identifier])
+  @@map("verifications")
+}
+
+// ---------------------------------------------------------------------------
+// Tenancy
+// ---------------------------------------------------------------------------
+
+model Organisation {
+  id           String  @id @default(uuid()) @db.Uuid
+  name         String  @db.VarChar(255)
+  legalName    String? @map("legal_name") @db.VarChar(255)
+  logoUrl      String? @map("logo_url")
+  email        String? @db.VarChar(255)
+  phone        String? @db.VarChar(30)
+  website      String?
+  addressLine1 String? @map("address_line_1") @db.VarChar(255)
+  addressLine2 String? @map("address_line_2") @db.VarChar(255)
+  city         String? @db.VarChar(100)
+  state        String? @db.VarChar(100)
+  postalCode   String? @map("postal_code") @db.VarChar(30)
+  countryCode  String  @default("IN") @map("country_code") @db.Char(2)
+  taxNumber    String? @map("tax_number") @db.VarChar(100)
+  currencyCode String  @default("INR") @map("currency_code") @db.Char(3)
+  timezone     String  @default("Asia/Kolkata") @db.VarChar(100)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  settings          OrganisationSettings?
+  members           OrganisationMember[]
+  documentSequences DocumentSequence[]
+  customers         Customer[]
+  quotations        Quotation[]
+  invoices          Invoice[]
+  payments          Payment[]
+  documents         Document[]
+  notifications     Notification[]
+  auditLogs         AuditLog[]
+
+  @@map("organisations")
+}
+
+model OrganisationMember {
+  id             String           @id @default(uuid()) @db.Uuid
+  organisationId String           @map("organisation_id") @db.Uuid
+  userId         String           @map("user_id") @db.Uuid
+  role           OrganisationRole
+  isActive       Boolean          @default(true) @map("is_active")
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organisationId, userId])
+  @@index([organisationId, userId])
+  @@index([userId])
+  @@map("organisation_members")
+}
+
+model OrganisationSettings {
+  id             String @id @default(uuid()) @db.Uuid
+  organisationId String @unique @map("organisation_id") @db.Uuid
+
+  invoicePrefix           String  @default("INV-") @map("invoice_prefix") @db.VarChar(10)
+  quotationPrefix         String  @default("QUO-") @map("quotation_prefix") @db.VarChar(10)
+  invoiceStartNumber      BigInt  @default(1) @map("invoice_start_number")
+  quotationStartNumber    BigInt  @default(1) @map("quotation_start_number")
+  numberPadding           Int     @default(6) @map("number_padding")
+  defaultPaymentTermsDays Int     @default(30) @map("default_payment_terms_days")
+  defaultNotes            String? @map("default_notes")
+  defaultTerms            String? @map("default_terms")
+  defaultTaxRate          Decimal @default(0) @map("default_tax_rate") @db.Decimal(9, 4)
+  dateFormat              String  @default("DD/MM/YYYY") @map("date_format") @db.VarChar(20)
+
+  /// Backs the "Config" cell for SALES -> convert quotation (Security Doc §12).
+  allowSalesConvertQuotation Boolean @default(false) @map("allow_sales_convert_quotation")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@map("organisation_settings")
+}
+
+/// Transactional document numbering (TICKET-006).
+/// Incremented with UPDATE ... RETURNING inside the creating transaction, which
+/// takes a row lock. Never MAX()+1.
+model DocumentSequence {
+  id             String             @id @default(uuid()) @db.Uuid
+  organisationId String             @map("organisation_id") @db.Uuid
+  documentType   DocumentNumberType @map("document_type")
+  prefix         String             @db.VarChar(10)
+  padding        Int                @default(6)
+  currentNumber  BigInt             @default(0) @map("current_number")
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@unique([organisationId, documentType])
+  @@map("document_sequences")
+}
+
+// ---------------------------------------------------------------------------
+// Customers
+// ---------------------------------------------------------------------------
+
+model Customer {
+  id             String       @id @default(uuid()) @db.Uuid
+  organisationId String       @map("organisation_id") @db.Uuid
+  customerType   CustomerType @default(COMPANY) @map("customer_type")
+  companyName    String?      @map("company_name") @db.VarChar(255)
+  contactName    String?      @map("contact_name") @db.VarChar(255)
+  email          String?      @db.VarChar(255)
+  phone          String?      @db.VarChar(30)
+  taxNumber      String?      @map("tax_number") @db.VarChar(100)
+
+  billingAddressLine1 String? @map("billing_address_line_1") @db.VarChar(255)
+  billingAddressLine2 String? @map("billing_address_line_2") @db.VarChar(255)
+  billingCity         String? @map("billing_city") @db.VarChar(100)
+  billingState        String? @map("billing_state") @db.VarChar(100)
+  billingPostalCode   String? @map("billing_postal_code") @db.VarChar(30)
+  billingCountryCode  String? @map("billing_country_code") @db.Char(2)
+
+  shippingAddressLine1 String? @map("shipping_address_line_1") @db.VarChar(255)
+  shippingAddressLine2 String? @map("shipping_address_line_2") @db.VarChar(255)
+  shippingCity         String? @map("shipping_city") @db.VarChar(100)
+  shippingState        String? @map("shipping_state") @db.VarChar(100)
+  shippingPostalCode   String? @map("shipping_postal_code") @db.VarChar(30)
+  shippingCountryCode  String? @map("shipping_country_code") @db.Char(2)
+
+  notes      String?
+  isArchived Boolean @default(false) @map("is_archived")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  quotations   Quotation[]
+  invoices     Invoice[]
+  payments     Payment[]
+
+  @@index([organisationId])
+  @@index([organisationId, isArchived])
+  @@index([organisationId, email])
+  @@map("customers")
+}
+
+// ---------------------------------------------------------------------------
+// Quotations
+// ---------------------------------------------------------------------------
+
+model Quotation {
+  id              String          @id @default(uuid()) @db.Uuid
+  organisationId  String          @map("organisation_id") @db.Uuid
+  customerId      String          @map("customer_id") @db.Uuid
+  quotationNumber String          @map("quotation_number") @db.VarChar(50)
+  issueDate       DateTime        @map("issue_date") @db.Date
+  validUntil      DateTime?       @map("valid_until") @db.Date
+  status          QuotationStatus @default(DRAFT)
+  currencyCode    String          @map("currency_code") @db.Char(3)
+
+  subtotal       Decimal @default(0) @db.Decimal(19, 4)
+  discountAmount Decimal @default(0) @map("discount_amount") @db.Decimal(19, 4)
+  taxAmount      Decimal @default(0) @map("tax_amount") @db.Decimal(19, 4)
+  totalAmount    Decimal @default(0) @map("total_amount") @db.Decimal(19, 4)
+
+  notes String?
+  terms String?
+
+  createdBy   String    @map("created_by") @db.Uuid
+  sentAt      DateTime? @map("sent_at") @db.Timestamptz(6)
+  acceptedAt  DateTime? @map("accepted_at") @db.Timestamptz(6)
+  rejectedAt  DateTime? @map("rejected_at") @db.Timestamptz(6)
+  convertedAt DateTime? @map("converted_at") @db.Timestamptz(6)
+
+  /// Optimistic concurrency (Security Doc §24). Bumped on every write; a stale
+  /// value is rejected rather than silently overwriting another user's edit.
+  version Int @default(1)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  customer     Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  items        QuotationItem[]
+  invoices     Invoice[]
+
+  @@unique([organisationId, quotationNumber])
+  @@index([organisationId])
+  @@index([organisationId, status])
+  @@index([organisationId, customerId])
+  @@index([organisationId, issueDate])
+  @@map("quotations")
+}
+
+model QuotationItem {
+  id          String  @id @default(uuid()) @db.Uuid
+  quotationId String  @map("quotation_id") @db.Uuid
+  position    Int
+  description String
+  quantity    Decimal @db.Decimal(19, 4)
+  unit        String? @db.VarChar(30)
+  unitPrice   Decimal @map("unit_price") @db.Decimal(19, 4)
+
+  discountRate   Decimal @default(0) @map("discount_rate") @db.Decimal(9, 4)
+  discountAmount Decimal @default(0) @map("discount_amount") @db.Decimal(19, 4)
+  taxRate        Decimal @default(0) @map("tax_rate") @db.Decimal(9, 4)
+  taxAmount      Decimal @default(0) @map("tax_amount") @db.Decimal(19, 4)
+  lineTotal      Decimal @default(0) @map("line_total") @db.Decimal(19, 4)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+
+  @@unique([quotationId, position])
+  @@index([quotationId])
+  @@map("quotation_items")
+}
+
+// ---------------------------------------------------------------------------
+// Invoices
+// ---------------------------------------------------------------------------
+
+model Invoice {
+  id             String        @id @default(uuid()) @db.Uuid
+  organisationId String        @map("organisation_id") @db.Uuid
+  customerId     String        @map("customer_id") @db.Uuid
+  quotationId    String?       @map("quotation_id") @db.Uuid
+  invoiceNumber  String        @map("invoice_number") @db.VarChar(50)
+  issueDate      DateTime      @map("issue_date") @db.Date
+  dueDate        DateTime      @map("due_date") @db.Date
+  status         InvoiceStatus @default(DRAFT)
+  currencyCode   String        @map("currency_code") @db.Char(3)
+
+  subtotal       Decimal @default(0) @db.Decimal(19, 4)
+  discountAmount Decimal @default(0) @map("discount_amount") @db.Decimal(19, 4)
+  taxAmount      Decimal @default(0) @map("tax_amount") @db.Decimal(19, 4)
+  totalAmount    Decimal @default(0) @map("total_amount") @db.Decimal(19, 4)
+  amountPaid     Decimal @default(0) @map("amount_paid") @db.Decimal(19, 4)
+  /// Maintained by the payment transaction, not computed on read, so the
+  /// dashboard and reports agree with the ledger.
+  amountDue      Decimal @default(0) @map("amount_due") @db.Decimal(19, 4)
+
+  notes String?
+  terms String?
+
+  createdBy   String    @map("created_by") @db.Uuid
+  sentAt      DateTime? @map("sent_at") @db.Timestamptz(6)
+  paidAt      DateTime? @map("paid_at") @db.Timestamptz(6)
+  cancelledAt DateTime? @map("cancelled_at") @db.Timestamptz(6)
+  cancelledReason String? @map("cancelled_reason")
+
+  version Int @default(1)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  customer     Customer            @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  quotation    Quotation?          @relation(fields: [quotationId], references: [id], onDelete: SetNull)
+  items        InvoiceItem[]
+  allocations  PaymentAllocation[]
+
+  @@unique([organisationId, invoiceNumber])
+  @@index([organisationId])
+  @@index([organisationId, status])
+  @@index([organisationId, customerId])
+  @@index([organisationId, issueDate])
+  @@index([organisationId, dueDate])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          String  @id @default(uuid()) @db.Uuid
+  invoiceId   String  @map("invoice_id") @db.Uuid
+  position    Int
+  description String
+  quantity    Decimal @db.Decimal(19, 4)
+  unit        String? @db.VarChar(30)
+  unitPrice   Decimal @map("unit_price") @db.Decimal(19, 4)
+
+  discountRate   Decimal @default(0) @map("discount_rate") @db.Decimal(9, 4)
+  discountAmount Decimal @default(0) @map("discount_amount") @db.Decimal(19, 4)
+  taxRate        Decimal @default(0) @map("tax_rate") @db.Decimal(9, 4)
+  taxAmount      Decimal @default(0) @map("tax_amount") @db.Decimal(19, 4)
+  lineTotal      Decimal @default(0) @map("line_total") @db.Decimal(19, 4)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@unique([invoiceId, position])
+  @@index([invoiceId])
+  @@map("invoice_items")
+}
+
+// ---------------------------------------------------------------------------
+// Payments
+// ---------------------------------------------------------------------------
+
+model Payment {
+  id             String        @id @default(uuid()) @db.Uuid
+  organisationId String        @map("organisation_id") @db.Uuid
+  customerId     String        @map("customer_id") @db.Uuid
+  paymentNumber  String        @map("payment_number") @db.VarChar(50)
+  paymentDate    DateTime      @map("payment_date") @db.Date
+  amount         Decimal       @db.Decimal(19, 4)
+  currencyCode   String        @map("currency_code") @db.Char(3)
+  paymentMethod  PaymentMethod @map("payment_method")
+  reference      String?       @db.VarChar(255)
+  notes          String?
+  status         PaymentStatus @default(RECORDED)
+
+  /// Idempotency (Security Doc §19). Unique per organisation, so a retried or
+  /// double-clicked request resolves to the existing payment instead of a
+  /// second one.
+  idempotencyKey String? @map("idempotency_key") @db.VarChar(255)
+
+  voidedAt     DateTime? @map("voided_at") @db.Timestamptz(6)
+  voidedReason String?   @map("voided_reason")
+
+  createdBy String   @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  customer     Customer            @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  allocations  PaymentAllocation[]
+
+  @@unique([organisationId, paymentNumber])
+  @@unique([organisationId, idempotencyKey])
+  @@index([organisationId])
+  @@index([organisationId, paymentDate])
+  @@index([organisationId, customerId])
+  @@map("payments")
+}
+
+model PaymentAllocation {
+  id              String   @id @default(uuid()) @db.Uuid
+  paymentId       String   @map("payment_id") @db.Uuid
+  invoiceId       String   @map("invoice_id") @db.Uuid
+  allocatedAmount Decimal  @map("allocated_amount") @db.Decimal(19, 4)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  @@unique([paymentId, invoiceId])
+  @@index([paymentId])
+  @@index([invoiceId])
+  @@map("payment_allocations")
+}
+
+// ---------------------------------------------------------------------------
+// Supporting tables
+// ---------------------------------------------------------------------------
+
+model Document {
+  id             String   @id @default(uuid()) @db.Uuid
+  organisationId String   @map("organisation_id") @db.Uuid
+  documentType   String   @map("document_type") @db.VarChar(50)
+  entityId       String   @map("entity_id") @db.Uuid
+  storageKey     String   @map("storage_key")
+  fileName       String   @map("file_name") @db.VarChar(255)
+  mimeType       String   @map("mime_type") @db.VarChar(100)
+  fileSize       Int      @map("file_size")
+  checksum       String?  @db.VarChar(128)
+  version        Int      @default(1)
+  createdBy      String?  @map("created_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId])
+  @@index([organisationId, entityId])
+  @@map("documents")
+}
+
+model Notification {
+  id                String              @id @default(uuid()) @db.Uuid
+  organisationId    String              @map("organisation_id") @db.Uuid
+  userId            String?             @map("user_id") @db.Uuid
+  type              String              @db.VarChar(100)
+  channel           NotificationChannel @default(EMAIL)
+  recipient         String              @db.VarChar(255)
+  subject           String?             @db.VarChar(500)
+  status            NotificationStatus  @default(PENDING)
+  relatedEntityType String?             @map("related_entity_type") @db.VarChar(50)
+  relatedEntityId   String?             @map("related_entity_id") @db.Uuid
+  providerMessageId String?             @map("provider_message_id") @db.VarChar(255)
+  sentAt            DateTime?           @map("sent_at") @db.Timestamptz(6)
+  failedAt          DateTime?           @map("failed_at") @db.Timestamptz(6)
+  errorMessage      String?             @map("error_message")
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId])
+  @@index([organisationId, status])
+  @@map("notifications")
+}
+
+/// Append-only audit trail (Security Doc §21).
+/// No updatedAt: rows are never modified. A DB trigger blocks UPDATE/DELETE.
+model AuditLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  organisationId String?  @map("organisation_id") @db.Uuid
+  userId         String?  @map("user_id") @db.Uuid
+  action         String   @db.VarChar(100)
+  entityType     String?  @map("entity_type") @db.VarChar(50)
+  entityId       String?  @map("entity_id") @db.Uuid
+  oldValues      Json?    @map("old_values")
+  newValues      Json?    @map("new_values")
+  ipAddress      String?  @map("ip_address") @db.Inet
+  userAgent      String?  @map("user_agent")
+  requestId      String?  @map("request_id") @db.VarChar(64)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organisation Organisation? @relation(fields: [organisationId], references: [id], onDelete: SetNull)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId, createdAt])
+  @@index([organisationId, entityType, entityId])
+  @@index([userId])
+  @@index([action])
+  @@map("audit_logs")
+}
