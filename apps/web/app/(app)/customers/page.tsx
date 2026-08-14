@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search, Plus, Archive, ArchiveRestore } from 'lucide-react';
 import type { CurrentUserResponse } from '@billing/types';
@@ -32,10 +33,16 @@ import {
  * and permission-denied.
  */
 export default function CustomersPage() {
-  const queryClient = useQueryClient();
-  const [search, setSearch] = useState('');
-  const [debounced, setDebounced] = useState('');
-  const [status, setStatus] = useState<'active' | 'archived' | 'all'>('active');
+  // Seed filters from the URL so a shared link keeps its filter.
+  const searchParams = useSearchParams();
+  const urlStatus = searchParams?.get('status');
+  const urlSearch = searchParams?.get('search') ?? '';
+
+  const [search, setSearch] = useState(urlSearch);
+  const [debounced, setDebounced] = useState(urlSearch);
+  const [status, setStatus] = useState<'active' | 'archived' | 'all'>(
+    urlStatus === 'archived' || urlStatus === 'all' ? urlStatus : 'active',
+  );
   const [page, setPage] = useState(1);
 
   // Debounce so a keystroke does not fire a request each time; the spec asks

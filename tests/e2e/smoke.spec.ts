@@ -129,6 +129,45 @@ test.describe('smoke', () => {
     await expect(page).toHaveURL(/\/customers\/new/);
   });
 
+  test('a quotation can be created, sent, accepted and converted', async ({ page }) => {
+    const errors = collectErrors(page);
+    await signIn(page);
+
+    // A customer is needed first; reuse one from the seed.
+    await page.goto('/quotations/new');
+    await page.waitForSelector('#customerId');
+    await page.selectOption('#customerId', { index: 1 });
+
+    await page.fill('input[aria-label="Description for line 1"]', 'E2E service');
+    await page.fill('input[aria-label="Quantity for line 1"]', '3');
+    await page.fill('input[aria-label="Unit price for line 1"]', '1000');
+    await page.fill('input[aria-label="Tax percent for line 1"]', '18');
+
+    await page.click('button[type=submit]');
+    await page.waitForURL(/\/quotations\/[0-9a-f-]{36}$/);
+
+    // Totals must come from the server: 3 x 1000 = 3000, +18% = 3540.
+    await expect(page.getByText('INR 3,540.00').first()).toBeVisible();
+
+    // Send — this also renders the PDF inside the same transaction.
+    await page.getByRole('button', { name: 'Send' }).click();
+    await page.getByRole('button', { name: 'Send quotation' }).click();
+    await expect(page.getByText('Sent', { exact: true }).first()).toBeVisible();
+
+    // Editing must no longer be offered once sent.
+    await expect(page.getByRole('link', { name: 'Edit' })).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Mark accepted' }).first().click();
+    await page.getByRole('button', { name: 'Mark accepted' }).last().click();
+    await expect(page.getByRole('button', { name: 'Convert to invoice' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Convert to invoice' }).click();
+    await page.getByRole('button', { name: 'Create invoice' }).click();
+    await expect(page.getByText(/Invoice INV-\d+ created/)).toBeVisible();
+
+    expect(errors, `browser errors: ${errors.join(' | ')}`).toEqual([]);
+  });
+
   test('navigation works on a mobile viewport', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await signIn(page);
