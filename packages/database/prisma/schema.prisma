@@ -578,10 +578,20 @@ model Document {
   createdBy      String?  @map("created_by") @db.Uuid
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
+  /// Content hash of the rendered document. The cache key: any change to
+  /// totals, status, line items, customer snapshot or org branding produces a
+  /// different hash and therefore a regenerated PDF.
+  contentHash String? @map("content_hash") @db.VarChar(64)
+
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
 
+  /// Makes PDF generation safe under concurrency: two simultaneous requests
+  /// for an uncached document both render, but only one row can be inserted
+  /// and the loser resolves to the winner's row.
+  @@unique([organisationId, entityId, documentType, version])
   @@index([organisationId])
   @@index([organisationId, entityId])
+  @@index([organisationId, entityId, contentHash])
   @@map("documents")
 }
 

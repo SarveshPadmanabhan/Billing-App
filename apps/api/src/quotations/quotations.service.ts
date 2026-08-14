@@ -21,6 +21,7 @@ import {
   type AuditAction,
 } from '@billing/types';
 import { AuditService } from '../common/audit/audit.service.js';
+import { PdfService } from '../documents/pdf.service.js';
 import { notFound, conflict, validationFailed, forbidden } from '../common/errors/app-error.js';
 import type { AuditMeta } from '../customers/customers.service.js';
 
@@ -88,7 +89,10 @@ const parseDate = (value: string) => new Date(`${value}T00:00:00.000Z`);
 
 @Injectable()
 export class QuotationsService {
-  constructor(@Inject(AuditService) private readonly audit: AuditService) {}
+  constructor(
+    @Inject(AuditService) private readonly audit: AuditService,
+    @Inject(PdfService) private readonly pdf: PdfService,
+  ) {}
 
   // -------------------------------------------------------------------------
   // TICKET-014 — list
@@ -415,6 +419,12 @@ export class QuotationsService {
       action: AuditAction;
       reason?: string | null;
       timestampField?: 'sentAt' | 'acceptedAt' | 'rejectedAt';
+      /**
+       * Runs inside the transaction BEFORE the status is written. Throwing
+       * here rolls the whole transition back, which is how send guarantees it
+       * never marks a document sent without a renderable PDF.
+       */
+      beforeCommit?: (tx: TenantClient) => Promise<void>;
     },
   ) {
     return withTenant(
@@ -433,6 +443,8 @@ export class QuotationsService {
             `Cannot move quotation ${existing.quotationNumber} from ${from} to ${to}`,
           );
         }
+
+        await options.beforeCommit?.(tx);
 
         const quotation = await tx.quotation.update({
           where: { id: quotationId },
@@ -464,10 +476,22 @@ export class QuotationsService {
     );
   }
 
+  /**
+   * Send a quotation.
+   *
+   * The PDF is rendered inside the same transaction, before the status moves.
+   * If Playwright fails, the transaction rolls back: the quotation stays
+   * DRAFT, no sentAt is written, and no audit row claims it was sent. The
+   * alternative — flip status, then render — can leave a quotation marked SENT
+   * with nothing to send (Security Doc §23).
+   */
   send(org: OrganisationContext, id: string, meta: AuditMeta) {
     return this.transition(org, id, 'SENT', meta, {
       action: 'QUOTATION_SENT',
       timestampField: 'sentAt',
+      beforeCommit: async (tx) => {
+        await this.pdf.generate(org, 'quotations', id, { userId: meta.userId, tx });
+      },
     });
   }
 
@@ -626,6 +650,20 @@ export class QuotationsService {
    * invoice the first request created. A retry after commit takes the same
    * path. There is therefore no window in which two invoices can be produced
    * from one quotation (Security Doc §18, Frontend Spec §19).
+   *
+   * ---------------------------------------------------------------------
+   * DO NOT change the item copy below into a recalculation.
+   *
+   * This is a deliberate decision, not an oversight. The invoice must state
+   * exactly the figures the customer accepted. If the organisation's default
+   * tax rate, discount policy, or price list changes between acceptance and
+   * conversion, recalculating would produce an invoice that silently differs
+   * from the accepted quotation — a billing dispute, not merely a data
+   * inconsistency. Amounts are therefore carried across as stored.
+   *
+   * If the figures genuinely need to change, the correct path is to issue a
+   * new quotation and have the customer accept that instead.
+   * ---------------------------------------------------------------------
    *
    * Line items are copied verbatim rather than recalculated: the customer
    * accepted specific figures, and a tax-rate change between acceptance and

@@ -20,6 +20,7 @@ import { CurrentAuth, CurrentOrganisation } from '../common/decorators/current-c
 import type { AuthContext } from '../common/types/request.js';
 import { notFound } from '../common/errors/app-error.js';
 import { QuotationsService } from './quotations.service.js';
+import { PdfService } from '../documents/pdf.service.js';
 import type { AuditMeta } from '../customers/customers.service.js';
 
 /**
@@ -31,7 +32,10 @@ import type { AuditMeta } from '../customers/customers.service.js';
  */
 @Controller({ path: 'quotations', version: '1' })
 export class QuotationsController {
-  constructor(@Inject(QuotationsService) private readonly quotations: QuotationsService) {}
+  constructor(
+    @Inject(QuotationsService) private readonly quotations: QuotationsService,
+    @Inject(PdfService) private readonly pdf: PdfService,
+  ) {}
 
   private meta(req: Request, auth: AuthContext): AuditMeta {
     return {
@@ -139,6 +143,23 @@ export class QuotationsController {
     @Req() req: Request,
   ) {
     return this.quotations.cancel(org, this.parseId(id), input.reason ?? null, this.meta(req, auth));
+  }
+
+  /**
+   * TICKET-020 — quotation PDF.
+   *
+   * Returns a short-lived signed URL rather than streaming bytes, so the file
+   * is served by object storage while access stays gated by this endpoint
+   * (Frontend Spec §27).
+   */
+  @RequirePermission('quotation:view')
+  @Get(':id/pdf')
+  async pdfUrl(
+    @CurrentAuth() auth: AuthContext,
+    @CurrentOrganisation() org: OrganisationContext,
+    @Param('id') id: string,
+  ) {
+    return this.pdf.downloadUrl(org, 'quotations', this.parseId(id), auth.user.userId);
   }
 
   // --- TICKET-021 duplicate --------------------------------------------------

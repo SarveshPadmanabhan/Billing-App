@@ -10,6 +10,8 @@ import { CustomersController } from './customers/customers.controller.js';
 import { CustomersService } from './customers/customers.service.js';
 import { QuotationsController } from './quotations/quotations.controller.js';
 import { QuotationsService } from './quotations/quotations.service.js';
+import { PdfService } from './documents/pdf.service.js';
+import { StorageService } from './documents/storage.service.js';
 
 import { AuthGuard } from './common/guards/auth.guard.js';
 import { OrganisationGuard } from './common/guards/organisation.guard.js';
@@ -42,6 +44,8 @@ const env = loadServerEnv();
     AuditService,
     CustomersService,
     QuotationsService,
+    StorageService,
+    PdfService,
 
     // Guard order matters and is guaranteed by registration order:
     //   throttle -> authenticate -> organisation membership + role.
