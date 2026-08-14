@@ -14,6 +14,60 @@ const SEED_ORG_ID = '11111111-1111-1111-1111-111111111111';
 const API_URL = process.env.E2E_API_URL ?? 'http://localhost:4000';
 
 /**
+ * Tests that create records use their own organisation rather than the seeded
+ * one. Writing into the seed pollutes the dataset every run — after enough
+ * runs the demo organisation filled with "Smoke Test Co" customers and dozens
+ * of throwaway invoices, which made the dashboard and lists useless for
+ * eyeballing real behaviour.
+ *
+ * Read-only tests still use the seeded organisation, because its data is
+ * realistic and covers every document state.
+ */
+const SCRATCH_PASSWORD = 'CorrectHorseBattery1';
+
+async function signInToScratchOrg(page: Page): Promise<void> {
+  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const email = `e2e-${stamp}@scratch.test`;
+
+  await page.goto('/login');
+  await page.evaluate(
+    async ([apiUrl, userEmail, password]) => {
+      await fetch(`${apiUrl}/api/v1/auth/sign-up/email`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: userEmail,
+          password,
+          name: 'E2E Scratch',
+          firstName: 'E2E',
+          lastName: 'Scratch',
+        }),
+      });
+      await fetch(`${apiUrl}/api/v1/auth/sign-in/email`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: userEmail, password }),
+      });
+      await fetch(`${apiUrl}/api/v1/organisations`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'E2E Scratch Org', currencyCode: 'INR', countryCode: 'IN' }),
+      });
+      await fetch(`${apiUrl}/api/v1/customers`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerType: 'COMPANY', companyName: 'Scratch Client' }),
+      });
+    },
+    [API_URL, email, SCRATCH_PASSWORD] as const,
+  );
+}
+
+/**
  * Collect browser-side errors for the lifetime of a page.
  *
  * Benign noise is filtered so the assertion stays meaningful; anything else
@@ -97,7 +151,7 @@ test.describe('smoke', () => {
 
   test('a customer can be created and read back', async ({ page }) => {
     const errors = collectErrors(page);
-    await signIn(page);
+    await signInToScratchOrg(page);
 
     const name = `Smoke Test Co ${Date.now()}`;
 
@@ -120,7 +174,7 @@ test.describe('smoke', () => {
   });
 
   test('server-side validation surfaces on the form', async ({ page }) => {
-    await signIn(page);
+    await signInToScratchOrg(page);
     await page.goto('/customers/new');
 
     // A company with no name must be refused, and the message shown inline.
@@ -131,9 +185,8 @@ test.describe('smoke', () => {
 
   test('a quotation can be created, sent, accepted and converted', async ({ page }) => {
     const errors = collectErrors(page);
-    await signIn(page);
+    await signInToScratchOrg(page);
 
-    // A customer is needed first; reuse one from the seed.
     await page.goto('/quotations/new');
     await page.waitForSelector('#customerId');
     await page.selectOption('#customerId', { index: 1 });
@@ -170,7 +223,7 @@ test.describe('smoke', () => {
 
   test('an invoice can be created, sent and cancelled', async ({ page }) => {
     const errors = collectErrors(page);
-    await signIn(page);
+    await signInToScratchOrg(page);
 
     await page.goto('/invoices/new');
     await page.waitForSelector('#customerId');

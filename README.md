@@ -7,8 +7,9 @@ This is a financial application. Data integrity, tenant isolation and
 auditability take precedence over delivery speed.
 
 **Status:** Phase 1 (Foundation) and Phase 2 (core billing workflow) complete —
-TICKET-001 through TICKET-037. The full loop works end to end:
-customer → quotation → invoice → payment, with PDFs, search and filters.
+TICKET-001 through TICKET-041. The full loop works end to end:
+customer → quotation → invoice → payment, with PDFs, search, filters and a
+dashboard.
 
 ---
 
@@ -139,6 +140,10 @@ openssl rand -base64 32   # ENCRYPTION_KEY
 `.env` is git-ignored. Only `.env.example` is committed, and only with empty
 secret values. In production these come from a secret manager, never a file.
 
+> `pnpm db:reset:demo` restores the two seeded organisations to a clean state
+> if manual exploration has cluttered them. It only touches those two
+> organisations and refuses to run in production.
+
 ### 4. Install, migrate, seed
 
 ```bash
@@ -212,6 +217,7 @@ as well as behaviour:
 | `invoices.sh` | Lifecycle, cancel-not-delete, overdue detection, BILLING scoped cancel |
 | `payments.sh` | Idempotency, overpayment rejection, voiding, and three concurrency races |
 | `search.sh` | Global search across all three types, combined filters, tenant scoping |
+| `dashboard.sh` | KPIs cross-checked against the module endpoints they summarise |
 | `pdf.sh` | Content-hash caching, concurrent generation, signed-URL access control |
 | `integrity.sh` | Audits database state directly — balances against the ledger, totals against line items, numbering, cross-tenant references |
 

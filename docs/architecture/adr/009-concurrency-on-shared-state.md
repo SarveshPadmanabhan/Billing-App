@@ -49,10 +49,41 @@ commit *or* rollback with no cleanup path to forget. They are keyed per
 resource, so unrelated documents never block each other, and cost nothing when
 uncontended.
 
-## Testing rule
+## Testing rule: a check you haven't watched fail isn't a check
 
-**A concurrency guarantee is not established until a test has run it
+Two rules, the second learned the harder way.
+
+**1. A concurrency guarantee is not established until a test has run it
 concurrently.** Sequential tests pass against all three broken designs above.
+
+**2. Any test or audit guarding a rare condition must be proven capable of
+failing, not merely observed passing.** A green result has two possible
+causes — the invariant holds, or the check is broken — and they are
+indistinguishable from the output alone.
+
+This is not hypothetical. Both have happened in this codebase:
+
+- The E2E smoke suite was validated by reintroducing the CORS-preflight bug:
+  5 of 6 tests failed while every API test stayed green. Without that
+  exercise, "8 passed" would have meant nothing.
+- `integrity.sh` shipped its first version reporting **26/26 passing while
+  checking nothing.** Listing organisations is itself under RLS, so the query
+  returned zero rows, the per-tenant loop never executed, and every check
+  summed to 0 — which is exactly what "no violations" looks like. A second bug
+  compounded it: errors were suppressed with `2>/dev/null`, so a failed query
+  returned an empty string that arithmetic treated as 0.
+
+Practical consequences for anything in this class:
+
+- **Inject the failure and watch it fail** before trusting the check. Repair
+  afterwards.
+- **Never suppress errors** in an assertion path. A query that cannot run must
+  report a failure, never a zero.
+- **Make scope visible in the output.** `integrity.sh` prints
+  "auditing 68 organisation(s)" so a collapse to zero tenants is obvious rather
+  than silent.
+- **Refuse to run rather than pass** when preconditions are unmet — the audit
+  exits non-zero if it cannot read any rows.
 
 Every feature in this class ships with a test that fires N simultaneous
 requests via `Promise.all` or backgrounded `curl` and asserts the invariant on

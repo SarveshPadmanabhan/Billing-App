@@ -20,12 +20,15 @@
     "db:studio": "pnpm --filter @billing/database studio",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:integration": "bash tests/integration/tenant-isolation.sh && bash tests/integration/customers.sh && bash tests/integration/quotations.sh && bash tests/integration/invoices.sh && bash tests/integration/payments.sh && bash tests/integration/search.sh && bash tests/integration/pdf.sh && bash tests/integration/integrity.sh",
-    "test:all": "pnpm test && pnpm test:integration && pnpm test:e2e"
+    "test:integration": "bash tests/integration/tenant-isolation.sh && bash tests/integration/customers.sh && bash tests/integration/quotations.sh && bash tests/integration/invoices.sh && bash tests/integration/payments.sh && bash tests/integration/search.sh && bash tests/integration/dashboard.sh && bash tests/integration/pdf.sh && bash tests/integration/integrity.sh",
+    "test:all": "pnpm test && pnpm test:integration && pnpm test:e2e",
+    "db:reset:demo": "dotenv -e .env -- tsx scripts/reset-demo-data.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
+    "dotenv-cli": "^7.4.4",
     "prettier": "^3.4.2",
+    "tsx": "^4.23.12",
     "turbo": "^2.3.3",
     "typescript": "^5.7.2"
   }
