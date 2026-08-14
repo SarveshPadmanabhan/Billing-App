@@ -168,6 +168,45 @@ test.describe('smoke', () => {
     expect(errors, `browser errors: ${errors.join(' | ')}`).toEqual([]);
   });
 
+  test('an invoice can be created, sent and cancelled', async ({ page }) => {
+    const errors = collectErrors(page);
+    await signIn(page);
+
+    await page.goto('/invoices/new');
+    await page.waitForSelector('#customerId');
+    await page.selectOption('#customerId', { index: 1 });
+
+    await page.fill('input[aria-label="Description for line 1"]', 'E2E invoice line');
+    await page.fill('input[aria-label="Quantity for line 1"]', '2');
+    await page.fill('input[aria-label="Unit price for line 1"]', '1500');
+    await page.fill('input[aria-label="Tax percent for line 1"]', '18');
+
+    await page.click('button[type=submit]');
+    await page.waitForURL(/\/invoices\/[0-9a-f-]{36}$/);
+
+    // 2 x 1500 = 3000, +18% = 3540, all outstanding.
+    const balance = page.getByLabel('Balance');
+    await expect(balance).toContainText('INR 3,540.00');
+
+    await page.getByRole('button', { name: 'Send' }).click();
+    await page.getByRole('button', { name: 'Send invoice' }).click();
+    await expect(page.getByRole('link', { name: 'Edit' })).toHaveCount(0);
+
+    // Cancellation must state a reason — the API rejects an empty one.
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await page.getByRole('button', { name: 'Cancel invoice' }).click();
+    await expect(page.getByText('A reason is required to cancel an invoice')).toBeVisible();
+
+    await page.fill('#cancel-reason', 'Raised in error during E2E run');
+    await page.getByRole('button', { name: 'Cancel invoice' }).click();
+    await expect(page.getByText('Raised in error during E2E run')).toBeVisible();
+
+    // A cancelled invoice owes nothing but keeps its total on record.
+    await expect(balance).toContainText('INR 0.00');
+
+    expect(errors, `browser errors: ${errors.join(' | ')}`).toEqual([]);
+  });
+
   test('navigation works on a mobile viewport', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await signIn(page);
