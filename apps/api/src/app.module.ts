@@ -8,6 +8,8 @@ import { AuthController } from './auth/auth.controller.js';
 import { OrganisationsController } from './organisations/organisations.controller.js';
 import { CustomersController } from './customers/customers.controller.js';
 import { CustomersService } from './customers/customers.service.js';
+import { QuotationsController } from './quotations/quotations.controller.js';
+import { QuotationsService } from './quotations/quotations.service.js';
 
 import { AuthGuard } from './common/guards/auth.guard.js';
 import { OrganisationGuard } from './common/guards/organisation.guard.js';
@@ -25,7 +27,13 @@ const env = loadServerEnv();
       { name: 'default', ttl: env.RATE_LIMIT_WINDOW_MS, limit: env.RATE_LIMIT_MAX },
     ]),
   ],
-  controllers: [HealthController, AuthController, OrganisationsController, CustomersController],
+  controllers: [
+    HealthController,
+    AuthController,
+    OrganisationsController,
+    CustomersController,
+    QuotationsController,
+  ],
   providers: [
     {
       provide: 'APP_LOGGER',
@@ -33,6 +41,7 @@ const env = loadServerEnv();
     },
     AuditService,
     CustomersService,
+    QuotationsService,
 
     // Guard order matters and is guaranteed by registration order:
     //   throttle -> authenticate -> organisation membership + role.

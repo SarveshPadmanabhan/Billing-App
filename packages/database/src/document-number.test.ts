@@ -22,18 +22,50 @@ url.searchParams.set('pool_timeout', '30');
 
 const prisma = new PrismaClient({ datasources: { db: { url: url.toString() } } });
 
+/**
+ * Reset a sequence for a clean run.
+ *
+ * Seeds to the highest number already used rather than to 0: these
+ * organisations hold real documents created by other suites, and restarting
+ * from 1 would collide with the (organisation_id, invoice_number) unique
+ * index — a test-isolation failure that looks like a numbering bug.
+ */
 async function resetSequence(organisationId: string, documentType: 'INVOICE' | 'QUOTATION') {
   // Inside withTenant: document_sequences is RLS-protected, so an unscoped
   // UPDATE would silently affect zero rows and leave the test misconfigured.
   await withTenant(
     organisationId,
-    (tx) => tx.$executeRaw`
-      UPDATE document_sequences SET current_number = 0
+    async (tx) => {
+      const used =
+        documentType === 'INVOICE'
+          ? await tx.invoice.count({ where: { organisationId } })
+          : await tx.quotation.count({ where: { organisationId } });
+
+      await tx.$executeRaw`
+        UPDATE document_sequences SET current_number = ${used}::bigint
+         WHERE organisation_id = ${organisationId}::uuid
+           AND document_type = ${documentType}::document_number_type
+      `;
+    },
+    prisma,
+  );
+}
+
+/** Current counter value, so assertions can be relative to the starting point. */
+async function currentNumber(
+  organisationId: string,
+  documentType: 'INVOICE' | 'QUOTATION',
+): Promise<number> {
+  const rows = await withTenant(
+    organisationId,
+    (tx) => tx.$queryRaw<Array<{ current_number: bigint }>>`
+      SELECT current_number FROM document_sequences
        WHERE organisation_id = ${organisationId}::uuid
          AND document_type = ${documentType}::document_number_type
     `,
     prisma,
   );
+  return Number(rows[0]?.current_number ?? 0n);
 }
 
 beforeAll(async () => {
@@ -66,28 +98,37 @@ describe('formatDocumentNumber', () => {
 });
 
 describe('nextDocumentNumber — sequential', () => {
-  it('starts at 1 and increments', async () => {
+  it('increments by one on each call', async () => {
+    const start = await currentNumber(ORG_A, 'INVOICE');
     const first = await withTenant(ORG_A, (tx) => nextDocumentNumber(tx, ORG_A, 'INVOICE'), prisma);
     const second = await withTenant(ORG_A, (tx) => nextDocumentNumber(tx, ORG_A, 'INVOICE'), prisma);
 
-    expect(first.formatted).toBe('INV-000001');
-    expect(second.formatted).toBe('INV-000002');
+    expect(Number(first.sequence)).toBe(start + 1);
+    expect(Number(second.sequence)).toBe(start + 2);
   });
 
   it('keeps INVOICE and QUOTATION counters independent', async () => {
+    const invoiceStart = await currentNumber(ORG_A, 'INVOICE');
+    const quotationStart = await currentNumber(ORG_A, 'QUOTATION');
+
     const invoice = await withTenant(ORG_A, (tx) => nextDocumentNumber(tx, ORG_A, 'INVOICE'), prisma);
     const quotation = await withTenant(ORG_A, (tx) => nextDocumentNumber(tx, ORG_A, 'QUOTATION'), prisma);
 
-    expect(invoice.formatted).toBe('INV-000001');
-    expect(quotation.formatted).toBe('QUO-000001');
+    expect(Number(invoice.sequence)).toBe(invoiceStart + 1);
+    expect(Number(quotation.sequence)).toBe(quotationStart + 1);
   });
 
   it('keeps organisations independent', async () => {
+    const aStart = await currentNumber(ORG_A, 'INVOICE');
+    const bStart = await currentNumber(ORG_B, 'INVOICE');
+
     const a = await withTenant(ORG_A, (tx) => nextDocumentNumber(tx, ORG_A, 'INVOICE'), prisma);
     const b = await withTenant(ORG_B, (tx) => nextDocumentNumber(tx, ORG_B, 'INVOICE'), prisma);
 
-    expect(a.formatted).toBe('INV-000001');
-    expect(b.formatted).toBe('GBX-000001'); // Org B's own prefix.
+    expect(Number(a.sequence)).toBe(aStart + 1);
+    expect(Number(b.sequence)).toBe(bStart + 1);
+    expect(a.formatted.startsWith('INV-')).toBe(true);
+    expect(b.formatted.startsWith('GBX-')).toBe(true); // Org B's own prefix.
   });
 
   it('rejects an organisation with no sequence row', async () => {
@@ -109,9 +150,10 @@ describe('nextDocumentNumber — sequential', () => {
       ),
     ).rejects.toThrow('simulated failure');
 
-    // Gapless: the aborted reservation must not consume 000001.
+    // Gapless: the aborted reservation must not consume a number.
+    const start = await currentNumber(ORG_A, 'INVOICE');
     const next = await withTenant(ORG_A, (tx) => nextDocumentNumber(tx, ORG_A, 'INVOICE'), prisma);
-    expect(next.formatted).toBe('INV-000001');
+    expect(Number(next.sequence)).toBe(start + 1);
   });
 });
 
@@ -133,8 +175,10 @@ describe('nextDocumentNumber — concurrent (the TICKET-006 acceptance test)', (
     expect(unique.size).toBe(CONCURRENCY);
 
     // Gapless 1..64 — not merely distinct.
+    // Gapless run of CONCURRENCY values, wherever the counter started.
     const sequences = results.map((r) => Number(r.sequence)).sort((a, b) => a - b);
-    expect(sequences).toEqual(Array.from({ length: CONCURRENCY }, (_, i) => i + 1));
+    const base = sequences[0]!;
+    expect(sequences).toEqual(Array.from({ length: CONCURRENCY }, (_, i) => base + i));
   }, 60_000);
 
   it('does not let concurrent tenants interfere with each other', async () => {
@@ -157,12 +201,11 @@ describe('nextDocumentNumber — concurrent (the TICKET-006 acceptance test)', (
     expect(new Set(bResults.map((r) => r.formatted)).size).toBe(PER_ORG);
 
     // Each org counts 1..25 in its own namespace.
-    expect(aResults.map((r) => Number(r.sequence)).sort((a, b) => a - b)).toEqual(
-      Array.from({ length: PER_ORG }, (_, i) => i + 1),
-    );
-    expect(bResults.map((r) => Number(r.sequence)).sort((a, b) => a - b)).toEqual(
-      Array.from({ length: PER_ORG }, (_, i) => i + 1),
-    );
+    for (const results of [aResults, bResults]) {
+      const sequences = results.map((r) => Number(r.sequence)).sort((a, b) => a - b);
+      const base = sequences[0]!;
+      expect(sequences).toEqual(Array.from({ length: PER_ORG }, (_, i) => base + i));
+    }
   }, 60_000);
 
   it('survives the unique index under concurrent inserts of real invoices', async () => {
