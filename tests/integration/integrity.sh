@@ -150,25 +150,65 @@ echo
 # --- Numbering ----------------------------------------------------------------------
 echo "3. Document numbering"
 
+# Scoped by company, not organisation: numbering is per company, so two
+# companies legitimately both hold INV-000001. An organisation-scoped check
+# would report that correct state as a duplicate.
 expect_zero "$(count_all "
-  SELECT count(*) FROM (SELECT organisation_id, invoice_number FROM invoices GROUP BY 1,2 HAVING count(*)>1) x;")" \
-  "No duplicate invoice numbers within an organisation"
+  SELECT count(*) FROM (SELECT company_id, invoice_number FROM invoices GROUP BY 1,2 HAVING count(*)>1) x;")" \
+  "No duplicate invoice numbers within a company"
 
 expect_zero "$(count_all "
-  SELECT count(*) FROM (SELECT organisation_id, quotation_number FROM quotations GROUP BY 1,2 HAVING count(*)>1) x;")" \
-  "No duplicate quotation numbers within an organisation"
+  SELECT count(*) FROM (SELECT company_id, quotation_number FROM quotations GROUP BY 1,2 HAVING count(*)>1) x;")" \
+  "No duplicate quotation numbers within a company"
 
 expect_zero "$(count_all "
-  SELECT count(*) FROM (SELECT organisation_id, payment_number FROM payments GROUP BY 1,2 HAVING count(*)>1) x;")" \
-  "No duplicate payment numbers within an organisation"
+  SELECT count(*) FROM (SELECT company_id, payment_number FROM payments GROUP BY 1,2 HAVING count(*)>1) x;")" \
+  "No duplicate payment numbers within a company"
 
 # The sequence must never sit behind the documents already issued, or the next
 # document would collide.
 expect_zero "$(count_all "
   SELECT count(*) FROM document_sequences ds
   WHERE ds.document_type = 'INVOICE'
-    AND ds.current_number < (SELECT count(*) FROM invoices i WHERE i.organisation_id = ds.organisation_id);")" \
+    AND ds.current_number < (SELECT count(*) FROM invoices i WHERE i.company_id = ds.company_id);")" \
   "Invoice sequence is not behind the issued count"
+
+# Every company must hold all three sequences. A company without them cannot
+# issue documents, and the failure only surfaces at the first invoice.
+expect_zero "$(count_all "
+  SELECT count(*) FROM companies c
+  CROSS JOIN (VALUES ('INVOICE'::document_number_type),
+                     ('QUOTATION'::document_number_type),
+                     ('PAYMENT'::document_number_type)) AS t(document_type)
+  WHERE NOT c.is_archived
+    AND NOT EXISTS (SELECT 1 FROM document_sequences ds
+                    WHERE ds.company_id = c.id AND ds.document_type = t.document_type);")" \
+  "Every company has all three document sequences"
+
+# A company must never point outside its organisation, and neither may any
+# document. This is the join that would silently leak data across tenants.
+expect_zero "$(count_all "
+  SELECT (SELECT count(*) FROM invoices i JOIN companies c ON c.id=i.company_id
+            WHERE c.organisation_id <> i.organisation_id)
+       + (SELECT count(*) FROM quotations q JOIN companies c ON c.id=q.company_id
+            WHERE c.organisation_id <> q.organisation_id)
+       + (SELECT count(*) FROM payments p JOIN companies c ON c.id=p.company_id
+            WHERE c.organisation_id <> p.organisation_id)
+       + (SELECT count(*) FROM customers cu JOIN companies c ON c.id=cu.company_id
+            WHERE c.organisation_id <> cu.organisation_id);")" \
+  "No record belongs to a company from another organisation"
+
+# Exactly one default company per organisation, matching the partial unique
+# index. Zero defaults would leave new sessions with no company to fall back to.
+# Counted from organisations, not from companies. Grouping the companies
+# table only sees organisations that HAVE a default, so an organisation with
+# zero defaults produces no group and vanishes from the result — the check
+# would pass precisely in the case it exists to catch.
+expect_zero "$(count_all "
+  SELECT count(*) FROM organisations o
+  WHERE (SELECT count(*) FROM companies c
+          WHERE c.organisation_id = o.id AND c.is_default) <> 1;")" \
+  "Each organisation has exactly one default company"
 echo
 
 # --- Referential integrity -------------------------------------------------------------

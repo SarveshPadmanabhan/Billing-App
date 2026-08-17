@@ -59,7 +59,14 @@ export class PaymentsService {
 
   async list(org: OrganisationContext, query: PaymentListQuery): Promise<Paginated<unknown>> {
     return withTenant(org.organisationId, async (tx) => {
-      const where: Prisma.PaymentWhereInput = { organisationId: org.organisationId };
+      // Scoped to the active company as well as the organisation: each company
+      // keeps its own customers, documents and financial position. The
+      // organisation_id filter stays — it is the security boundary; company is
+      // the view filter layered on top.
+      const where: Prisma.PaymentWhereInput = {
+        organisationId: org.organisationId,
+        companyId: org.companyId,
+      };
 
       if (query.status) where.status = query.status;
       if (query.customerId) where.customerId = query.customerId;
@@ -258,11 +265,12 @@ export class PaymentsService {
           ]);
         }
 
-        const number = await nextDocumentNumber(tx, org.organisationId, 'PAYMENT');
+        const number = await nextDocumentNumber(tx, org.organisationId, org.companyId, 'PAYMENT');
 
         const payment = await tx.payment.create({
           data: {
             organisationId: org.organisationId,
+            companyId: org.companyId,
             customerId: invoice.customerId,
             paymentNumber: number.formatted,
             paymentDate: new Date(`${input.paymentDate}T00:00:00.000Z`),

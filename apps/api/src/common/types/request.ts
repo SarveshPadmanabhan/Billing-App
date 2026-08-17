@@ -5,6 +5,8 @@ export interface AuthContext {
   sessionId: string;
   /** From the session row — server-controlled, never client-supplied. */
   activeOrganisationId: string | null;
+  /** Selected company; null means the organisation's default. */
+  activeCompanyId: string | null;
   /** Populated by OrganisationGuard once membership is verified. */
   organisation: OrganisationContext | null;
 }

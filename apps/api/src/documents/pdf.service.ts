@@ -217,6 +217,7 @@ export class PdfService implements OnModuleDestroy {
       const document = await tx.document.create({
         data: {
           organisationId: org.organisationId,
+          companyId: org.companyId,
           documentType: entityType,
           entityId,
           storageKey: key,

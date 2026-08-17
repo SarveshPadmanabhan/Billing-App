@@ -1,12 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { Menu, Bell, ChevronDown, Plus, LogOut } from 'lucide-react';
+import { Menu, Bell, ChevronDown, Plus, LogOut, Building2, Check } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import type { CurrentUserResponse } from '@billing/types';
 import { authClient } from '../../lib/auth-client';
+import { apiFetch } from '../../lib/api-client';
 import { GlobalSearch } from './global-search';
 
 /**
@@ -21,8 +23,29 @@ export function Topbar({
   onOpenNav: () => void;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [companyOpen, setCompanyOpen] = useState(false);
+  const [switching, setSwitching] = useState(false);
+
+  const companies = user.organisation?.companies ?? [];
+  const activeCompanyId = user.organisation?.companyId;
+
+  async function switchCompany(companyId: string) {
+    if (companyId === activeCompanyId || switching) return;
+    setSwitching(true);
+    try {
+      await apiFetch('/companies/switch', { method: 'POST', json: { companyId } });
+      // The active company changes what every list and the dashboard return,
+      // so the whole cache is stale — clear it rather than patch it.
+      await queryClient.invalidateQueries();
+      router.refresh();
+    } finally {
+      setSwitching(false);
+      setCompanyOpen(false);
+    }
+  }
 
   const initials = `${user.user.firstName.charAt(0)}${user.user.lastName?.charAt(0) ?? ''}`.toUpperCase();
 
@@ -44,16 +67,69 @@ export function Topbar({
       </button>
 
       <div className="flex min-w-0 flex-1 items-center gap-4">
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="relative flex min-w-0 items-center gap-3">
           {user.organisation && (
-            <span className="truncate text-body font-medium text-ink">
-              {user.organisation.organisationName}
-            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setCompanyOpen((v) => !v);
+                setCreateOpen(false);
+                setAccountOpen(false);
+              }}
+              aria-expanded={companyOpen}
+              aria-haspopup="menu"
+              className="flex min-w-0 items-center gap-2 rounded-sm px-2 py-1 hover:bg-canvas"
+            >
+              <span className="truncate text-body font-medium text-ink">
+                {user.organisation.companyName || user.organisation.organisationName}
+              </span>
+              <ChevronDown className="h-4 w-4 shrink-0 text-ink-muted" aria-hidden="true" />
+            </button>
           )}
           {user.organisation && (
             <span className="hidden rounded-full bg-canvas px-2 py-0.5 text-caption text-ink-secondary lg:inline">
               {user.organisation.role}
             </span>
+          )}
+
+          {companyOpen && user.organisation && (
+            <div
+              role="menu"
+              className="absolute left-0 top-full z-20 mt-2 w-72 rounded-md border border-border bg-surface py-1 shadow-modal"
+            >
+              <p className="px-4 py-2 text-caption font-semibold uppercase tracking-wide text-ink-muted">
+                {user.organisation.organisationName}
+              </p>
+
+              {companies.map((company) => (
+                <button
+                  key={company.id}
+                  type="button"
+                  role="menuitem"
+                  disabled={switching}
+                  onClick={() => switchCompany(company.id)}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-body text-ink-secondary hover:bg-canvas hover:text-ink disabled:opacity-50"
+                >
+                  <Building2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span className="min-w-0 flex-1 truncate">{company.name}</span>
+                  {company.id === activeCompanyId && (
+                    <Check className="h-4 w-4 shrink-0 text-primary" aria-label="Current company" />
+                  )}
+                </button>
+              ))}
+
+              <div className="my-1 border-t border-border" />
+
+              <Link
+                href="/companies/new"
+                role="menuitem"
+                onClick={() => setCompanyOpen(false)}
+                className="flex items-center gap-2 px-4 py-2 text-body text-primary hover:bg-canvas"
+              >
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Add company
+              </Link>
+            </div>
           )}
         </div>
         <GlobalSearch />

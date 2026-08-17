@@ -13,6 +13,10 @@ import { withTenant } from './client.js';
 const ORG_A = '11111111-1111-1111-1111-111111111111';
 const ORG_B = '22222222-2222-2222-2222-222222222222';
 
+// Default companies created by the seed. Numbering is per company.
+const COMPANY_A = 'aaaa1111-1111-1111-1111-111111111111';
+const COMPANY_B = 'bbbb2222-2222-2222-2222-222222222222';
+
 // A dedicated pool: 64 concurrent transactions each need their own connection,
 // and the default limit would serialise them at the pool instead of in the DB —
 // which would make the test pass for the wrong reason.
@@ -30,7 +34,11 @@ const prisma = new PrismaClient({ datasources: { db: { url: url.toString() } } }
  * from 1 would collide with the (organisation_id, invoice_number) unique
  * index — a test-isolation failure that looks like a numbering bug.
  */
-async function resetSequence(organisationId: string, documentType: 'INVOICE' | 'QUOTATION') {
+async function resetSequence(
+  organisationId: string,
+  companyId: string,
+  documentType: 'INVOICE' | 'QUOTATION',
+) {
   // Inside withTenant: document_sequences is RLS-protected, so an unscoped
   // UPDATE would silently affect zero rows and leave the test misconfigured.
   await withTenant(
@@ -38,12 +46,13 @@ async function resetSequence(organisationId: string, documentType: 'INVOICE' | '
     async (tx) => {
       const used =
         documentType === 'INVOICE'
-          ? await tx.invoice.count({ where: { organisationId } })
-          : await tx.quotation.count({ where: { organisationId } });
+          ? await tx.invoice.count({ where: { organisationId, companyId } })
+          : await tx.quotation.count({ where: { organisationId, companyId } });
 
       await tx.$executeRaw`
         UPDATE document_sequences SET current_number = ${used}::bigint
          WHERE organisation_id = ${organisationId}::uuid
+           AND company_id = ${companyId}::uuid
            AND document_type = ${documentType}::document_number_type
       `;
     },
@@ -54,6 +63,7 @@ async function resetSequence(organisationId: string, documentType: 'INVOICE' | '
 /** Current counter value, so assertions can be relative to the starting point. */
 async function currentNumber(
   organisationId: string,
+  companyId: string,
   documentType: 'INVOICE' | 'QUOTATION',
 ): Promise<number> {
   const rows = await withTenant(
@@ -61,6 +71,7 @@ async function currentNumber(
     (tx) => tx.$queryRaw<Array<{ current_number: bigint }>>`
       SELECT current_number FROM document_sequences
        WHERE organisation_id = ${organisationId}::uuid
+         AND company_id = ${companyId}::uuid
          AND document_type = ${documentType}::document_number_type
     `,
     prisma,
@@ -73,16 +84,16 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await resetSequence(ORG_A, 'INVOICE');
-  await resetSequence(ORG_A, 'QUOTATION');
-  await resetSequence(ORG_B, 'INVOICE');
+  await resetSequence(ORG_A, COMPANY_A, 'INVOICE');
+  await resetSequence(ORG_A, COMPANY_A, 'QUOTATION');
+  await resetSequence(ORG_B, COMPANY_B, 'INVOICE');
   await prisma.$disconnect();
 });
 
 beforeEach(async () => {
-  await resetSequence(ORG_A, 'INVOICE');
-  await resetSequence(ORG_A, 'QUOTATION');
-  await resetSequence(ORG_B, 'INVOICE');
+  await resetSequence(ORG_A, COMPANY_A, 'INVOICE');
+  await resetSequence(ORG_A, COMPANY_A, 'QUOTATION');
+  await resetSequence(ORG_B, COMPANY_B, 'INVOICE');
 });
 
 describe('formatDocumentNumber', () => {
@@ -99,31 +110,31 @@ describe('formatDocumentNumber', () => {
 
 describe('nextDocumentNumber — sequential', () => {
   it('increments by one on each call', async () => {
-    const start = await currentNumber(ORG_A, 'INVOICE');
-    const first = await withTenant(ORG_A, (tx) => nextDocumentNumber(tx, ORG_A, 'INVOICE'), prisma);
-    const second = await withTenant(ORG_A, (tx) => nextDocumentNumber(tx, ORG_A, 'INVOICE'), prisma);
+    const start = await currentNumber(ORG_A, COMPANY_A, 'INVOICE');
+    const first = await withTenant(ORG_A, (tx) => nextDocumentNumber(tx, ORG_A, COMPANY_A, 'INVOICE'), prisma);
+    const second = await withTenant(ORG_A, (tx) => nextDocumentNumber(tx, ORG_A, COMPANY_A, 'INVOICE'), prisma);
 
     expect(Number(first.sequence)).toBe(start + 1);
     expect(Number(second.sequence)).toBe(start + 2);
   });
 
   it('keeps INVOICE and QUOTATION counters independent', async () => {
-    const invoiceStart = await currentNumber(ORG_A, 'INVOICE');
-    const quotationStart = await currentNumber(ORG_A, 'QUOTATION');
+    const invoiceStart = await currentNumber(ORG_A, COMPANY_A, 'INVOICE');
+    const quotationStart = await currentNumber(ORG_A, COMPANY_A, 'QUOTATION');
 
-    const invoice = await withTenant(ORG_A, (tx) => nextDocumentNumber(tx, ORG_A, 'INVOICE'), prisma);
-    const quotation = await withTenant(ORG_A, (tx) => nextDocumentNumber(tx, ORG_A, 'QUOTATION'), prisma);
+    const invoice = await withTenant(ORG_A, (tx) => nextDocumentNumber(tx, ORG_A, COMPANY_A, 'INVOICE'), prisma);
+    const quotation = await withTenant(ORG_A, (tx) => nextDocumentNumber(tx, ORG_A, COMPANY_A, 'QUOTATION'), prisma);
 
     expect(Number(invoice.sequence)).toBe(invoiceStart + 1);
     expect(Number(quotation.sequence)).toBe(quotationStart + 1);
   });
 
   it('keeps organisations independent', async () => {
-    const aStart = await currentNumber(ORG_A, 'INVOICE');
-    const bStart = await currentNumber(ORG_B, 'INVOICE');
+    const aStart = await currentNumber(ORG_A, COMPANY_A, 'INVOICE');
+    const bStart = await currentNumber(ORG_B, COMPANY_B, 'INVOICE');
 
-    const a = await withTenant(ORG_A, (tx) => nextDocumentNumber(tx, ORG_A, 'INVOICE'), prisma);
-    const b = await withTenant(ORG_B, (tx) => nextDocumentNumber(tx, ORG_B, 'INVOICE'), prisma);
+    const a = await withTenant(ORG_A, (tx) => nextDocumentNumber(tx, ORG_A, COMPANY_A, 'INVOICE'), prisma);
+    const b = await withTenant(ORG_B, (tx) => nextDocumentNumber(tx, ORG_B, COMPANY_B, 'INVOICE'), prisma);
 
     expect(Number(a.sequence)).toBe(aStart + 1);
     expect(Number(b.sequence)).toBe(bStart + 1);
@@ -133,8 +144,9 @@ describe('nextDocumentNumber — sequential', () => {
 
   it('rejects an organisation with no sequence row', async () => {
     const orphan = '33333333-3333-3333-3333-333333333333';
+    const orphanCompany = '33333333-3333-3333-3333-333333333334';
     await expect(
-      withTenant(orphan, (tx) => nextDocumentNumber(tx, orphan, 'INVOICE'), prisma),
+      withTenant(orphan, (tx) => nextDocumentNumber(tx, orphan, orphanCompany, 'INVOICE'), prisma),
     ).rejects.toThrow(DocumentSequenceError);
   });
 
@@ -143,7 +155,7 @@ describe('nextDocumentNumber — sequential', () => {
       withTenant(
         ORG_A,
         async (tx) => {
-          await nextDocumentNumber(tx, ORG_A, 'INVOICE');
+          await nextDocumentNumber(tx, ORG_A, COMPANY_A, 'INVOICE');
           throw new Error('simulated failure after reserving a number');
         },
         prisma,
@@ -151,8 +163,8 @@ describe('nextDocumentNumber — sequential', () => {
     ).rejects.toThrow('simulated failure');
 
     // Gapless: the aborted reservation must not consume a number.
-    const start = await currentNumber(ORG_A, 'INVOICE');
-    const next = await withTenant(ORG_A, (tx) => nextDocumentNumber(tx, ORG_A, 'INVOICE'), prisma);
+    const start = await currentNumber(ORG_A, COMPANY_A, 'INVOICE');
+    const next = await withTenant(ORG_A, (tx) => nextDocumentNumber(tx, ORG_A, COMPANY_A, 'INVOICE'), prisma);
     expect(Number(next.sequence)).toBe(start + 1);
   });
 });
@@ -165,7 +177,7 @@ describe('nextDocumentNumber — concurrent (the TICKET-006 acceptance test)', (
     // genuinely contend for the same sequence row.
     const results = await Promise.all(
       Array.from({ length: CONCURRENCY }, () =>
-        withTenant(ORG_A, (tx) => nextDocumentNumber(tx, ORG_A, 'INVOICE'), prisma),
+        withTenant(ORG_A, (tx) => nextDocumentNumber(tx, ORG_A, COMPANY_A, 'INVOICE'), prisma),
       ),
     );
 
@@ -187,12 +199,12 @@ describe('nextDocumentNumber — concurrent (the TICKET-006 acceptance test)', (
     const [aResults, bResults] = await Promise.all([
       Promise.all(
         Array.from({ length: PER_ORG }, () =>
-          withTenant(ORG_A, (tx) => nextDocumentNumber(tx, ORG_A, 'INVOICE'), prisma),
+          withTenant(ORG_A, (tx) => nextDocumentNumber(tx, ORG_A, COMPANY_A, 'INVOICE'), prisma),
         ),
       ),
       Promise.all(
         Array.from({ length: PER_ORG }, () =>
-          withTenant(ORG_B, (tx) => nextDocumentNumber(tx, ORG_B, 'INVOICE'), prisma),
+          withTenant(ORG_B, (tx) => nextDocumentNumber(tx, ORG_B, COMPANY_B, 'INVOICE'), prisma),
         ),
       ),
     ]);
@@ -236,10 +248,11 @@ describe('nextDocumentNumber — concurrent (the TICKET-006 acceptance test)', (
         withTenant(
           ORG_A,
           async (tx) => {
-            const number = await nextDocumentNumber(tx, ORG_A, 'INVOICE');
+            const number = await nextDocumentNumber(tx, ORG_A, COMPANY_A, 'INVOICE');
             return tx.invoice.create({
               data: {
                 organisationId: ORG_A,
+                companyId: COMPANY_A,
                 customerId,
                 invoiceNumber: number.formatted,
                 issueDate: new Date('2026-01-15'),

@@ -15,6 +15,11 @@ const prisma = new PrismaClient();
 const ORG_A_ID = '11111111-1111-1111-1111-111111111111';
 const ORG_B_ID = '22222222-2222-2222-2222-222222222222';
 
+// Each organisation's default company. Fixed ids so the seed is idempotent and
+// so tests can reference a known company.
+const COMPANY_A_ID = 'aaaa1111-1111-1111-1111-111111111111';
+const COMPANY_B_ID = 'bbbb2222-2222-2222-2222-222222222222';
+
 /**
  * Better Auth's default password hash format: scrypt, `salt:hash` in hex.
  * Kept in sync with better-auth's own defaults so seeded users can log in
@@ -108,6 +113,7 @@ async function main() {
 
   await seedOrganisation({
     id: ORG_A_ID,
+    companyId: COMPANY_A_ID,
     name: 'Acme Consulting',
     legalName: 'Acme Consulting Private Limited',
     email: 'accounts@acme.test',
@@ -127,6 +133,7 @@ async function main() {
 
   await seedOrganisation({
     id: ORG_B_ID,
+    companyId: COMPANY_B_ID,
     name: 'Globex Corporation',
     legalName: 'Globex Corporation LLP',
     email: 'accounts@globex.test',
@@ -143,7 +150,7 @@ async function main() {
   // Realistic quotations and invoices across the lifecycle, so the customer
   // detail page, invoice list and (later) dashboard have something meaningful
   // to render rather than empty states.
-  await seedDocuments(ORG_A_ID, owner.id);
+  await seedDocuments(ORG_A_ID, COMPANY_A_ID, owner.id);
 
   console.log('\nSeed complete.\n');
   console.log('  Organisation A — Acme Consulting');
@@ -209,7 +216,7 @@ const daysFromNow = (days: number) => {
  * render: draft, sent, accepted-and-converted, paid, partially paid, overdue
  * and cancelled.
  */
-async function seedDocuments(organisationId: string, userId: string) {
+async function seedDocuments(organisationId: string, companyId: string, userId: string) {
   await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT set_config('app.current_organisation_id', ${organisationId}, true)`;
     await tx.$executeRaw`SELECT set_config('app.current_user_id', ${userId}, true)`;
@@ -243,6 +250,7 @@ async function seedDocuments(organisationId: string, userId: string) {
     await tx.quotation.create({
       data: {
         organisationId,
+        companyId,
         customerId: northwind!.id,
         quotationNumber: nextNumber('quotation'),
         issueDate: daysFromNow(-3),
@@ -265,6 +273,7 @@ async function seedDocuments(organisationId: string, userId: string) {
     await tx.quotation.create({
       data: {
         organisationId,
+        companyId,
         customerId: contoso!.id,
         quotationNumber: nextNumber('quotation'),
         issueDate: daysFromNow(-10),
@@ -289,6 +298,7 @@ async function seedDocuments(organisationId: string, userId: string) {
     const paidInvoice = await tx.invoice.create({
       data: {
         organisationId,
+        companyId,
         customerId: northwind!.id,
         invoiceNumber: nextNumber('invoice'),
         issueDate: daysFromNow(-60),
@@ -316,6 +326,7 @@ async function seedDocuments(organisationId: string, userId: string) {
     const partialInvoice = await tx.invoice.create({
       data: {
         organisationId,
+        companyId,
         customerId: northwind!.id,
         invoiceNumber: nextNumber('invoice'),
         issueDate: daysFromNow(-25),
@@ -340,6 +351,7 @@ async function seedDocuments(organisationId: string, userId: string) {
     await tx.invoice.create({
       data: {
         organisationId,
+        companyId,
         customerId: contoso!.id,
         invoiceNumber: nextNumber('invoice'),
         issueDate: daysFromNow(-75),
@@ -364,6 +376,7 @@ async function seedDocuments(organisationId: string, userId: string) {
     await tx.invoice.create({
       data: {
         organisationId,
+        companyId,
         customerId: northwind!.id,
         invoiceNumber: nextNumber('invoice'),
         issueDate: daysFromNow(0),
@@ -387,6 +400,7 @@ async function seedDocuments(organisationId: string, userId: string) {
     await tx.invoice.create({
       data: {
         organisationId,
+        companyId,
         customerId: contoso!.id,
         invoiceNumber: nextNumber('invoice'),
         issueDate: daysFromNow(-20),
@@ -411,6 +425,7 @@ async function seedDocuments(organisationId: string, userId: string) {
     const fullPayment = await tx.payment.create({
       data: {
         organisationId,
+        companyId,
         customerId: northwind!.id,
         paymentNumber: 'PAY-000001',
         paymentDate: daysFromNow(-32),
@@ -433,6 +448,7 @@ async function seedDocuments(organisationId: string, userId: string) {
     const partPayment = await tx.payment.create({
       data: {
         organisationId,
+        companyId,
         customerId: northwind!.id,
         paymentNumber: 'PAY-000002',
         paymentDate: daysFromNow(-12),
@@ -481,6 +497,7 @@ interface SeedOrgInput {
   legalName: string;
   email: string;
   taxNumber: string;
+  companyId: string;
   invoicePrefix: string;
   quotationPrefix: string;
   members: Array<{ userId: string; role: 'OWNER' | 'ADMIN' | 'BILLING' | 'SALES' | 'VIEWER' }>;
@@ -522,15 +539,45 @@ async function seedOrganisation(input: SeedOrgInput) {
             defaultTerms: 'Payment due within 30 days of invoice date.',
           },
         },
-        documentSequences: {
-          create: [
-            { documentType: 'INVOICE', prefix: input.invoicePrefix, padding: 6, currentNumber: 0n },
-            { documentType: 'QUOTATION', prefix: input.quotationPrefix, padding: 6, currentNumber: 0n },
-            { documentType: 'PAYMENT', prefix: 'PAY-', padding: 6, currentNumber: 0n },
-          ],
-        },
       },
     });
+
+    // Default company, then its sequences. Numbering is per company, so the
+    // company must exist before the sequences can reference it.
+    const company = await tx.company.upsert({
+      where: { id: input.companyId },
+      update: {},
+      create: {
+        id: input.companyId,
+        organisationId: input.id,
+        name: input.name,
+        countryCode: 'IN',
+        currencyCode: 'INR',
+        invoicePrefix: input.invoicePrefix,
+        quotationPrefix: input.quotationPrefix,
+        isDefault: true,
+      },
+      select: { id: true },
+    });
+
+    for (const seq of [
+      { documentType: 'INVOICE' as const, prefix: input.invoicePrefix },
+      { documentType: 'QUOTATION' as const, prefix: input.quotationPrefix },
+      { documentType: 'PAYMENT' as const, prefix: 'PAY-' },
+    ]) {
+      await tx.documentSequence.upsert({
+        where: { companyId_documentType: { companyId: company.id, documentType: seq.documentType } },
+        update: {},
+        create: {
+          organisationId: input.id,
+          companyId: company.id,
+          documentType: seq.documentType,
+          prefix: seq.prefix,
+          padding: 6,
+          currentNumber: 0n,
+        },
+      });
+    }
 
     for (const member of input.members) {
       await tx.organisationMember.upsert({
@@ -547,6 +594,7 @@ async function seedOrganisation(input: SeedOrgInput) {
         create: {
           id: customer.id,
           organisationId: input.id,
+          companyId: company.id,
           customerType: 'COMPANY',
           companyName: customer.companyName,
           contactName: 'Accounts Payable',

@@ -84,7 +84,32 @@ export class OrganisationsController {
         select: { id: true, name: true, currencyCode: true, countryCode: true, createdAt: true },
       });
 
-      await createDocumentSequences(tx, organisationId, {
+      // Every organisation gets one default company, created here so an
+      // organisation is never in a state where documents have nowhere to
+      // belong. Additional companies are added later via /companies.
+      const defaultCompany = await tx.company.create({
+        data: {
+          organisationId,
+          name: input.name,
+          legalName: input.legalName ?? null,
+          email: input.email ?? null,
+          phone: input.phone ?? null,
+          addressLine1: input.addressLine1 ?? null,
+          addressLine2: input.addressLine2 ?? null,
+          city: input.city ?? null,
+          state: input.state ?? null,
+          postalCode: input.postalCode ?? null,
+          countryCode: input.countryCode,
+          taxNumber: input.taxNumber ?? null,
+          currencyCode: input.currencyCode,
+          invoicePrefix: input.invoicePrefix,
+          quotationPrefix: input.quotationPrefix,
+          isDefault: true,
+        },
+        select: { id: true },
+      });
+
+      await createDocumentSequences(tx, organisationId, defaultCompany.id, {
         invoicePrefix: input.invoicePrefix,
         quotationPrefix: input.quotationPrefix,
         invoiceStartNumber: BigInt(input.invoiceStartNumber),

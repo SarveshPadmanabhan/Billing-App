@@ -163,6 +163,12 @@ model Session {
   /// cannot set this, which is what stops org-ID forgery at the session layer.
   activeOrganisationId String? @map("active_organisation_id") @db.Uuid
 
+  /// Currently selected company within the active organisation. Like
+  /// activeOrganisationId this is server-controlled (input: false) and only
+  /// written after the company is confirmed to belong to the organisation.
+  /// Null means "use the organisation's default company".
+  activeCompanyId String? @map("active_company_id") @db.Uuid
+
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -235,6 +241,7 @@ model Organisation {
 
   settings          OrganisationSettings?
   members           OrganisationMember[]
+  companies         Company[]
   documentSequences DocumentSequence[]
   customers         Customer[]
   quotations        Quotation[]
@@ -245,6 +252,61 @@ model Organisation {
   auditLogs         AuditLog[]
 
   @@map("organisations")
+}
+
+/// A legal entity that issues documents, nested inside an organisation.
+///
+/// The organisation stays the tenant boundary: RLS, membership and every
+/// isolation guarantee still key off organisation_id. A company is a
+/// sub-division *within* that boundary — several entities under one account,
+/// each with its own invoice numbering, branding and financial position.
+///
+/// Consequence worth stating plainly: company is NOT a security boundary.
+/// Members of an organisation can see every company in it. Scoping by company
+/// filters what you are looking at; it does not isolate tenants. Anything
+/// requiring true isolation must be a separate organisation.
+model Company {
+  id             String  @id @default(uuid()) @db.Uuid
+  organisationId String  @map("organisation_id") @db.Uuid
+  name           String  @db.VarChar(255)
+  legalName      String? @map("legal_name") @db.VarChar(255)
+  logoUrl        String? @map("logo_url")
+  email          String? @db.VarChar(255)
+  phone          String? @db.VarChar(30)
+  addressLine1   String? @map("address_line_1") @db.VarChar(255)
+  addressLine2   String? @map("address_line_2") @db.VarChar(255)
+  city           String? @db.VarChar(100)
+  state          String? @db.VarChar(100)
+  postalCode     String? @map("postal_code") @db.VarChar(30)
+  countryCode    String  @default("IN") @map("country_code") @db.Char(2)
+  taxNumber      String? @map("tax_number") @db.VarChar(100)
+  currencyCode   String  @default("INR") @map("currency_code") @db.Char(3)
+
+  /// Numbering prefixes are per company so two entities never interleave
+  /// invoice numbers. See DocumentSequence.
+  invoicePrefix   String @default("INV-") @map("invoice_prefix") @db.VarChar(10)
+  quotationPrefix String @default("QUO-") @map("quotation_prefix") @db.VarChar(10)
+  paymentPrefix   String @default("PAY-") @map("payment_prefix") @db.VarChar(10)
+
+  /// The company used when a request does not name one. Exactly one per
+  /// organisation, enforced by a partial unique index in the migration.
+  isDefault  Boolean @default(false) @map("is_default")
+  isArchived Boolean @default(false) @map("is_archived")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation      Organisation       @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  documentSequences DocumentSequence[]
+  customers         Customer[]
+  quotations        Quotation[]
+  invoices          Invoice[]
+  payments          Payment[]
+  documents         Document[]
+
+  @@index([organisationId])
+  @@index([organisationId, isArchived])
+  @@map("companies")
 }
 
 model OrganisationMember {
@@ -298,6 +360,9 @@ model OrganisationSettings {
 model DocumentSequence {
   id             String             @id @default(uuid()) @db.Uuid
   organisationId String             @map("organisation_id") @db.Uuid
+  /// Numbering is per company: two entities under one organisation must not
+  /// interleave invoice numbers. organisation_id is kept for RLS.
+  companyId      String             @map("company_id") @db.Uuid
   documentType   DocumentNumberType @map("document_type")
   prefix         String             @db.VarChar(10)
   padding        Int                @default(6)
@@ -306,8 +371,9 @@ model DocumentSequence {
   updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  @@unique([organisationId, documentType])
+  @@unique([companyId, documentType])
   @@map("document_sequences")
 }
 
@@ -318,6 +384,9 @@ model DocumentSequence {
 model Customer {
   id             String       @id @default(uuid()) @db.Uuid
   organisationId String       @map("organisation_id") @db.Uuid
+  /// Issuing/owning company within the organisation. Scopes what a user is
+  /// looking at; organisation_id remains the security boundary.
+  companyId      String       @map("company_id") @db.Uuid
   customerType   CustomerType @default(COMPANY) @map("customer_type")
   companyName    String?      @map("company_name") @db.VarChar(255)
   contactName    String?      @map("contact_name") @db.VarChar(255)
@@ -346,6 +415,7 @@ model Customer {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Restrict)
   quotations   Quotation[]
   invoices     Invoice[]
   payments     Payment[]
@@ -363,6 +433,9 @@ model Customer {
 model Quotation {
   id              String          @id @default(uuid()) @db.Uuid
   organisationId  String          @map("organisation_id") @db.Uuid
+  /// Issuing/owning company within the organisation. Scopes what a user is
+  /// looking at; organisation_id remains the security boundary.
+  companyId      String       @map("company_id") @db.Uuid
   customerId      String          @map("customer_id") @db.Uuid
   quotationNumber String          @map("quotation_number") @db.VarChar(50)
   issueDate       DateTime        @map("issue_date") @db.Date
@@ -392,15 +465,17 @@ model Quotation {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organisation Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Restrict)
   customer     Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
   items        QuotationItem[]
   invoices     Invoice[]
 
-  @@unique([organisationId, quotationNumber])
+  @@unique([companyId, quotationNumber])
   @@index([organisationId])
   @@index([organisationId, status])
   @@index([organisationId, customerId])
   @@index([organisationId, issueDate])
+  @@index([organisationId, companyId])
   @@map("quotations")
 }
 
@@ -436,6 +511,9 @@ model QuotationItem {
 model Invoice {
   id             String        @id @default(uuid()) @db.Uuid
   organisationId String        @map("organisation_id") @db.Uuid
+  /// Issuing/owning company within the organisation. Scopes what a user is
+  /// looking at; organisation_id remains the security boundary.
+  companyId      String       @map("company_id") @db.Uuid
   customerId     String        @map("customer_id") @db.Uuid
   quotationId    String?       @map("quotation_id") @db.Uuid
   invoiceNumber  String        @map("invoice_number") @db.VarChar(50)
@@ -468,17 +546,19 @@ model Invoice {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organisation Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Restrict)
   customer     Customer            @relation(fields: [customerId], references: [id], onDelete: Restrict)
   quotation    Quotation?          @relation(fields: [quotationId], references: [id], onDelete: SetNull)
   items        InvoiceItem[]
   allocations  PaymentAllocation[]
 
-  @@unique([organisationId, invoiceNumber])
+  @@unique([companyId, invoiceNumber])
   @@index([organisationId])
   @@index([organisationId, status])
   @@index([organisationId, customerId])
   @@index([organisationId, issueDate])
   @@index([organisationId, dueDate])
+  @@index([organisationId, companyId])
   @@map("invoices")
 }
 
@@ -514,6 +594,9 @@ model InvoiceItem {
 model Payment {
   id             String        @id @default(uuid()) @db.Uuid
   organisationId String        @map("organisation_id") @db.Uuid
+  /// Issuing/owning company within the organisation. Scopes what a user is
+  /// looking at; organisation_id remains the security boundary.
+  companyId      String       @map("company_id") @db.Uuid
   customerId     String        @map("customer_id") @db.Uuid
   paymentNumber  String        @map("payment_number") @db.VarChar(50)
   paymentDate    DateTime      @map("payment_date") @db.Date
@@ -537,14 +620,16 @@ model Payment {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organisation Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Restrict)
   customer     Customer            @relation(fields: [customerId], references: [id], onDelete: Restrict)
   allocations  PaymentAllocation[]
 
-  @@unique([organisationId, paymentNumber])
+  @@unique([companyId, paymentNumber])
   @@unique([organisationId, idempotencyKey])
   @@index([organisationId])
   @@index([organisationId, paymentDate])
   @@index([organisationId, customerId])
+  @@index([organisationId, companyId])
   @@map("payments")
 }
 
@@ -571,6 +656,9 @@ model PaymentAllocation {
 model Document {
   id             String   @id @default(uuid()) @db.Uuid
   organisationId String   @map("organisation_id") @db.Uuid
+  /// Issuing/owning company within the organisation. Scopes what a user is
+  /// looking at; organisation_id remains the security boundary.
+  companyId      String       @map("company_id") @db.Uuid
   documentType   String   @map("document_type") @db.VarChar(50)
   entityId       String   @map("entity_id") @db.Uuid
   storageKey     String   @map("storage_key")
@@ -588,6 +676,7 @@ model Document {
   contentHash String? @map("content_hash") @db.VarChar(64)
 
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Restrict)
 
   /// Makes PDF generation safe under concurrency: two simultaneous requests
   /// for an uncached document both render, but only one row can be inserted
@@ -596,6 +685,7 @@ model Document {
   @@index([organisationId])
   @@index([organisationId, entityId])
   @@index([organisationId, entityId, contentHash])
+  @@index([organisationId, companyId])
   @@map("documents")
 }
 

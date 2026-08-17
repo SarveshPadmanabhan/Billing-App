@@ -60,6 +60,8 @@ export class AuthGuard implements CanActivate {
       // membership is verified. Never populated from client input.
       activeOrganisationId:
         (session.session as { activeOrganisationId?: string | null }).activeOrganisationId ?? null,
+      activeCompanyId:
+        (session.session as { activeCompanyId?: string | null }).activeCompanyId ?? null,
       organisation: null,
     };
 

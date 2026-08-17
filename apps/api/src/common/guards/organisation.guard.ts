@@ -93,11 +93,39 @@ export class OrganisationGuard implements CanActivate {
       throw forbidden(`Unrecognised role on membership ${membership.id}`);
     }
 
+    // Resolve the active company. The session may name one; otherwise fall
+    // back to the organisation's default. A named company is verified to
+    // belong to this organisation before use — a client-supplied id is never
+    // trusted, exactly as with organisationId.
+    const company = await withTenant(membership.organisation.id, async (tx) => {
+      if (auth.activeCompanyId) {
+        const named = await tx.company.findFirst({
+          where: {
+            id: auth.activeCompanyId,
+            organisationId: membership.organisation.id,
+            isArchived: false,
+          },
+          select: { id: true, name: true },
+        });
+        if (named) return named;
+      }
+      return tx.company.findFirst({
+        where: { organisationId: membership.organisation.id, isDefault: true },
+        select: { id: true, name: true },
+      });
+    });
+
+    if (!company) {
+      throw forbidden(`Organisation ${membership.organisation.id} has no usable company`);
+    }
+
     auth.organisation = {
       organisationId: membership.organisation.id,
       organisationName: membership.organisation.name,
       role: membership.role,
       membershipId: membership.id,
+      companyId: company.id,
+      companyName: company.name,
     };
 
     const required = this.reflector.getAllAndOverride<Permission>(REQUIRED_PERMISSION_KEY, [

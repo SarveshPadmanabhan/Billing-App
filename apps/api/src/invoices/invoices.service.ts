@@ -101,7 +101,14 @@ export class InvoicesService {
 
   async list(org: OrganisationContext, query: InvoiceListQuery): Promise<Paginated<unknown>> {
     return withTenant(org.organisationId, async (tx) => {
-      const where: Prisma.InvoiceWhereInput = { organisationId: org.organisationId };
+      // Scoped to the active company as well as the organisation: each company
+      // keeps its own customers, documents and financial position. The
+      // organisation_id filter stays — it is the security boundary; company is
+      // the view filter layered on top.
+      const where: Prisma.InvoiceWhereInput = {
+        organisationId: org.organisationId,
+        companyId: org.companyId,
+      };
 
       if (query.status) where.status = query.status;
       if (query.customerId) where.customerId = query.customerId;
@@ -238,11 +245,12 @@ export class InvoicesService {
         }
 
         // Reserved inside this transaction; rolls back with it (TICKET-026).
-        const number = await nextDocumentNumber(tx, org.organisationId, 'INVOICE');
+        const number = await nextDocumentNumber(tx, org.organisationId, org.companyId, 'INVOICE');
 
         const invoice = await tx.invoice.create({
           data: {
             organisationId: org.organisationId,
+            companyId: org.companyId,
             customerId: customer.id,
             invoiceNumber: number.formatted,
             issueDate,
@@ -641,7 +649,7 @@ export class InvoicesService {
 
         await this.requireActiveCustomer(tx, org.organisationId, source.customerId);
 
-        const number = await nextDocumentNumber(tx, org.organisationId, 'INVOICE');
+        const number = await nextDocumentNumber(tx, org.organisationId, org.companyId, 'INVOICE');
 
         // Dates reset to today: a duplicate is a new claim, and carrying the
         // original issue date would misstate when it was raised.
@@ -655,6 +663,7 @@ export class InvoicesService {
         const copy = await tx.invoice.create({
           data: {
             organisationId: org.organisationId,
+            companyId: org.companyId,
             customerId: source.customerId,
             // The source quotation link is NOT copied: this invoice did not
             // come from that quotation, and duplicating the link would imply

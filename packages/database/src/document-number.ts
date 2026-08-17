@@ -65,6 +65,12 @@ interface SequenceRow {
 export async function nextDocumentNumber(
   tx: TenantClient,
   organisationId: string,
+  /**
+   * Numbering is per company. Keyed on organisation alone this UPDATE would
+   * match every company's sequence row for the type and increment an arbitrary
+   * one, interleaving two companies' invoice numbers.
+   */
+  companyId: string,
   documentType: SequenceDocumentType,
 ): Promise<GeneratedDocumentNumber> {
   const rows = await tx.$queryRaw<SequenceRow[]>`
@@ -72,6 +78,7 @@ export async function nextDocumentNumber(
        SET current_number = current_number + 1,
            updated_at     = now()
      WHERE organisation_id = ${organisationId}::uuid
+       AND company_id      = ${companyId}::uuid
        AND document_type   = ${documentType}::document_number_type
     RETURNING current_number, prefix, padding
   `;
@@ -110,6 +117,8 @@ export function formatDocumentNumber(prefix: string, value: bigint, padding: num
 export async function createDocumentSequences(
   tx: TenantClient,
   organisationId: string,
+  /** Sequences are per company: two companies must not share a number series. */
+  companyId: string,
   options: {
     invoicePrefix: string;
     quotationPrefix: string;
@@ -127,6 +136,7 @@ export async function createDocumentSequences(
     data: [
       {
         organisationId,
+        companyId,
         documentType: 'INVOICE',
         prefix: options.invoicePrefix,
         padding: options.padding,
@@ -134,6 +144,7 @@ export async function createDocumentSequences(
       },
       {
         organisationId,
+        companyId,
         documentType: 'QUOTATION',
         prefix: options.quotationPrefix,
         padding: options.padding,
@@ -141,6 +152,7 @@ export async function createDocumentSequences(
       },
       {
         organisationId,
+        companyId,
         documentType: 'PAYMENT',
         prefix: options.paymentPrefix ?? 'PAY-',
         padding: options.padding,
@@ -148,7 +160,11 @@ export async function createDocumentSequences(
         currentNumber: 0n,
       },
     ],
-    skipDuplicates: true,
+    // NOT skipDuplicates. It once hid a real failure: a stale
+    // (organisation_id, document_type) unique index made a second company's
+    // sequences look like duplicates, so all three inserts were skipped, the
+    // create returned 201, and the company only broke later with "No INVOICE
+    // sequence". A collision here means something is wrong — fail loudly.
   });
 }
 

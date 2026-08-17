@@ -97,7 +97,10 @@ export class DashboardService {
    */
   async summary(org: OrganisationContext): Promise<DashboardSummary> {
     return withTenant(org.organisationId, async (tx) => {
-      const scope = { organisationId: org.organisationId };
+      // Every figure on the dashboard is per company: outstanding, overdue,
+      // paid and the recent lists. Two companies under one organisation keep
+      // separate financial positions, which is the point of having them.
+      const scope = { organisationId: org.organisationId, companyId: org.companyId };
       const today = todayUtc();
 
       const [organisation, issued, collectable, overdue, draftCount, sentQuotes, acceptedQuotes] =
@@ -179,7 +182,10 @@ export class DashboardService {
   /** Recent documents and the collections worklist (TICKET-040). */
   async recent(org: OrganisationContext, limit = 5): Promise<DashboardRecent> {
     return withTenant(org.organisationId, async (tx) => {
-      const scope = { organisationId: org.organisationId };
+      // Every figure on the dashboard is per company: outstanding, overdue,
+      // paid and the recent lists. Two companies under one organisation keep
+      // separate financial positions, which is the point of having them.
+      const scope = { organisationId: org.organisationId, companyId: org.companyId };
 
       const [invoices, quotations, outstandingInvoices] = await Promise.all([
         tx.invoice.findMany({

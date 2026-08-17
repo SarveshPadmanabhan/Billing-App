@@ -63,7 +63,7 @@ export class CustomersService {
 
   async list(org: OrganisationContext, query: CustomerListQuery): Promise<Paginated<unknown>> {
     return withTenant(org.organisationId, async (tx) => {
-      const where = this.buildWhere(org.organisationId, query);
+      const where = this.buildWhere(org.organisationId, org.companyId, query);
 
       // Outstanding sorting needs an aggregate, so it takes a different path
       // from the plain column sorts.
@@ -103,8 +103,14 @@ export class CustomersService {
     });
   }
 
-  private buildWhere(organisationId: string, query: CustomerListQuery): Prisma.CustomerWhereInput {
-    const where: Prisma.CustomerWhereInput = { organisationId };
+  private buildWhere(
+    organisationId: string,
+    companyId: string,
+    query: CustomerListQuery,
+  ): Prisma.CustomerWhereInput {
+    // organisation_id is the security boundary; company_id narrows the view to
+    // the entity the user has selected.
+    const where: Prisma.CustomerWhereInput = { organisationId, companyId };
 
     // Archived customers leave the default list but remain reachable
     // (TICKET-011): their historical documents must stay viewable.
@@ -237,6 +243,7 @@ export class CustomersService {
           data: {
             // Tenant from verified context, never from the payload.
             organisationId: org.organisationId,
+            companyId: org.companyId,
             customerType: input.customerType,
             companyName: input.companyName ?? null,
             contactName: input.contactName ?? null,

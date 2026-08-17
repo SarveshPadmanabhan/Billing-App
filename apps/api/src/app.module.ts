@@ -6,6 +6,7 @@ import { loadServerEnv } from '@billing/config';
 import { HealthController } from './health/health.controller.js';
 import { AuthController } from './auth/auth.controller.js';
 import { OrganisationsController } from './organisations/organisations.controller.js';
+import { CompaniesController } from './companies/companies.controller.js';
 import { CustomersController } from './customers/customers.controller.js';
 import { CustomersService } from './customers/customers.service.js';
 import { QuotationsController } from './quotations/quotations.controller.js';
@@ -41,6 +42,7 @@ const env = loadServerEnv();
     HealthController,
     AuthController,
     OrganisationsController,
+    CompaniesController,
     CustomersController,
     QuotationsController,
     InvoicesController,

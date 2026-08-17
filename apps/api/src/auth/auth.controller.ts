@@ -61,11 +61,29 @@ export class AuthController {
         }),
       );
 
+      // Companies for the switcher, plus the one currently selected. Falls
+      // back to the default when the session names none.
+      const companies = await withTenant(active.organisationId, (tx) =>
+        tx.company.findMany({
+          where: { organisationId: active.organisationId, isArchived: false },
+          select: { id: true, name: true, isDefault: true },
+          orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
+        }),
+      );
+
+      const selected =
+        companies.find((c) => c.id === authContext.activeCompanyId) ??
+        companies.find((c) => c.isDefault) ??
+        companies[0];
+
       organisation = {
         organisationId: active.organisationId,
         organisationName: active.organisation.name,
         role: active.role as OrganisationRole,
         membershipId: '',
+        companyId: selected?.id ?? '',
+        companyName: selected?.name ?? '',
+        companies: companies.map((c) => ({ id: c.id, name: c.name, isDefault: c.isDefault })),
         permissions: permissionsForRole(active.role as OrganisationRole, {
           allowSalesConvertQuotation: settings?.allowSalesConvertQuotation ?? false,
         }),

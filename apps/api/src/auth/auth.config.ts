@@ -56,6 +56,9 @@ export const auth = betterAuth({
        * verify membership first.
        */
       activeOrganisationId: { type: 'string', required: false, input: false },
+      // input: false — a client must never set its own company, same rule as
+      // the organisation. Written only by the switch endpoints.
+      activeCompanyId: { type: 'string', required: false, input: false },
     },
   },
 

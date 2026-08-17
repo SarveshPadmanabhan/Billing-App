@@ -100,7 +100,14 @@ export class QuotationsService {
 
   async list(org: OrganisationContext, query: QuotationListQuery): Promise<Paginated<unknown>> {
     return withTenant(org.organisationId, async (tx) => {
-      const where: Prisma.QuotationWhereInput = { organisationId: org.organisationId };
+      // Scoped to the active company as well as the organisation: each company
+      // keeps its own customers, documents and financial position. The
+      // organisation_id filter stays — it is the security boundary; company is
+      // the view filter layered on top.
+      const where: Prisma.QuotationWhereInput = {
+        organisationId: org.organisationId,
+        companyId: org.companyId,
+      };
 
       if (query.status) where.status = query.status;
       if (query.customerId) where.customerId = query.customerId;
@@ -196,11 +203,12 @@ export class QuotationsService {
 
         // Reserved inside this transaction; rolls back with it if anything
         // below fails, keeping numbering gapless (TICKET-015).
-        const number = await nextDocumentNumber(tx, org.organisationId, 'QUOTATION');
+        const number = await nextDocumentNumber(tx, org.organisationId, org.companyId, 'QUOTATION');
 
         const quotation = await tx.quotation.create({
           data: {
             organisationId: org.organisationId,
+            companyId: org.companyId,
             customerId: customer.id,
             quotationNumber: number.formatted,
             issueDate: parseDate(input.issueDate),
@@ -560,7 +568,7 @@ export class QuotationsService {
         // document nobody can act on.
         await this.requireActiveCustomer(tx, org.organisationId, source.customerId);
 
-        const number = await nextDocumentNumber(tx, org.organisationId, 'QUOTATION');
+        const number = await nextDocumentNumber(tx, org.organisationId, org.companyId, 'QUOTATION');
 
         // Dates reset to today rather than copied: a duplicate is a new offer,
         // and carrying a stale issue date would misrepresent it.
@@ -581,6 +589,7 @@ export class QuotationsService {
         const copy = await tx.quotation.create({
           data: {
             organisationId: org.organisationId,
+            companyId: org.companyId,
             customerId: source.customerId,
             quotationNumber: number.formatted,
             issueDate,
@@ -755,11 +764,12 @@ export class QuotationsService {
           ]);
         }
 
-        const number = await nextDocumentNumber(tx, org.organisationId, 'INVOICE');
+        const number = await nextDocumentNumber(tx, org.organisationId, org.companyId, 'INVOICE');
 
         const invoice = await tx.invoice.create({
           data: {
             organisationId: org.organisationId,
+            companyId: org.companyId,
             customerId: quotation.customerId,
             quotationId: quotation.id, // Preserves the source relationship.
             invoiceNumber: number.formatted,
