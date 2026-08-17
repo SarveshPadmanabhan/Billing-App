@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Trash2, Plus, Package } from 'lucide-react';
 import { Button, Input, Money } from '../ui/primitives';
@@ -257,6 +258,14 @@ export function LineItemsEditor({
  *
  * Typing over a picked product clears the link. Leaving it attached would mean
  * a line describing one thing while deducting another.
+ *
+ * The menu renders through a portal rather than inline. The table sits in an
+ * overflow-x-auto container so wide content scrolls instead of pushing the
+ * page sideways, and that container clips vertically too — an absolutely
+ * positioned menu was cut off at its edge. z-index cannot fix that; clipping
+ * happens before stacking. A portal takes the menu out of the container
+ * entirely, so it is positioned against the viewport and flips above the
+ * input when there is not enough room below.
  */
 function ProductPicker({
   index,
@@ -275,6 +284,13 @@ function ProductPicker({
 }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLUListElement>(null);
+  const [position, setPosition] = useState<{
+    left: number;
+    width: number;
+    top?: number;
+    bottom?: number;
+  } | null>(null);
 
   const { data } = useQuery({
     queryKey: ['stock', 'options'],
@@ -287,10 +303,56 @@ function ProductPicker({
   useEffect(() => {
     if (!open) return;
     function onDocumentClick(event: MouseEvent) {
-      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      // The menu is portalled outside the container, so it needs its own
+      // hit test — otherwise clicking an option counts as an outside click
+      // and closes the menu before the option fires.
+      if (containerRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setOpen(false);
     }
     document.addEventListener('mousedown', onDocumentClick);
     return () => document.removeEventListener('mousedown', onDocumentClick);
+  }, [open]);
+
+  // Measure against the viewport and decide whether the menu opens downward
+  // or flips above. useLayoutEffect so the position is set before paint —
+  // with useEffect the menu would appear at 0,0 for one frame.
+  useLayoutEffect(() => {
+    if (!open) {
+      setPosition(null);
+      return;
+    }
+
+    function place() {
+      const input = containerRef.current?.querySelector('input');
+      if (!input) return;
+      const rect = input.getBoundingClientRect();
+      const MENU_MAX = 256; // matches max-h-64
+      const GAP = 4;
+      const spaceBelow = window.innerHeight - rect.bottom;
+
+      // Flip up only when below genuinely cannot fit AND above has more room,
+      // so a menu near the top of a short window does not flip into nothing.
+      const flipUp = spaceBelow < MENU_MAX + GAP && rect.top > spaceBelow;
+
+      setPosition({
+        left: rect.left,
+        width: rect.width,
+        ...(flipUp
+          ? { bottom: window.innerHeight - rect.top + GAP }
+          : { top: rect.bottom + GAP }),
+      });
+    }
+
+    place();
+    // The input moves when the page or its container scrolls; capture catches
+    // scrolls on the table container as well as the window.
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => {
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+    };
   }, [open]);
 
   const term = item.description.trim().toLowerCase();
@@ -327,38 +389,50 @@ function ProductPicker({
         </span>
       )}
 
-      {open && matches.length > 0 && (
-        <ul
-          id={`product-options-${index}`}
-          role="listbox"
-          className="absolute z-20 mt-1 max-h-64 w-full min-w-[280px] overflow-auto rounded-md border border-border bg-surface py-1 shadow-modal"
-        >
-          {matches.map((product) => (
-            <li key={product.id}>
-              <button
-                type="button"
-                role="option"
-                aria-selected={product.id === item.stockItemId}
-                onClick={() => {
-                  onPick(product);
-                  setOpen(false);
-                }}
-                className="flex w-full items-baseline justify-between gap-3 px-3 py-2 text-left hover:bg-canvas"
-              >
-                <span className="min-w-0">
-                  <span className="block truncate text-body text-ink">{product.name}</span>
-                  <span className="block truncate text-caption text-ink-muted">{product.sku}</span>
-                </span>
-                <span className="shrink-0 text-caption text-ink-muted">
-                  {product.tracksStock
-                    ? `${product.quantityOnHand.replace(/\.?0+$/, '')} ${product.unit}`
-                    : 'Not tracked'}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      {open &&
+        matches.length > 0 &&
+        position &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <ul
+            ref={menuRef}
+            id={`product-options-${index}`}
+            role="listbox"
+            style={{
+              left: position.left,
+              width: Math.max(position.width, 280),
+              ...(position.top !== undefined ? { top: position.top } : {}),
+              ...(position.bottom !== undefined ? { bottom: position.bottom } : {}),
+            }}
+            className="fixed z-50 max-h-64 overflow-auto rounded-md border border-border bg-surface py-1 shadow-modal"
+          >
+            {matches.map((product) => (
+              <li key={product.id}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={product.id === item.stockItemId}
+                  onClick={() => {
+                    onPick(product);
+                    setOpen(false);
+                  }}
+                  className="flex w-full items-baseline justify-between gap-3 px-3 py-2 text-left hover:bg-canvas"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-body text-ink">{product.name}</span>
+                    <span className="block truncate text-caption text-ink-muted">{product.sku}</span>
+                  </span>
+                  <span className="shrink-0 text-caption text-ink-muted">
+                    {product.tracksStock
+                      ? `${product.quantityOnHand.replace(/\.?0+$/, '')} ${product.unit}`
+                      : 'Not tracked'}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>,
+          document.body,
+        )}
     </div>
   );
 }
