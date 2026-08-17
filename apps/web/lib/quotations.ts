@@ -9,6 +9,7 @@ export interface QuotationItem {
   position: number;
   description: string;
   quantity: string;
+  stockItemId: string | null;
   unit: string | null;
   unitPrice: string;
   discountRate: string;
@@ -82,6 +83,8 @@ export const getQuotation = (id: string) => apiFetch<QuotationDetail>(`/quotatio
 export interface LineItemDraft {
   /** Client-side key for React list stability; never sent. */
   key: string;
+  /** Set when the line was picked from the product list; drives stock deduction. */
+  stockItemId: string | null;
   description: string;
   quantity: string;
   unit: string;
@@ -106,12 +109,15 @@ function toPayload(values: QuotationFormValues) {
     issueDate: values.issueDate,
     validUntil: values.validUntil || null,
     items: values.items.map((item) => ({
+      stockItemId: item.stockItemId,
       description: item.description.trim(),
       quantity: item.quantity || '0',
+      // Unit is no longer edited per line — it comes from the picked product.
       unit: item.unit.trim() || null,
       unitPrice: item.unitPrice || '0',
-      // Omit rather than send "0": the API treats null as "no discount".
-      discountRate: item.discountRate && Number(item.discountRate) > 0 ? item.discountRate : null,
+      // Per-line discount was removed from the editor. Existing documents keep
+      // theirs; new lines are always created without one.
+      discountRate: null,
       taxRate: item.taxRate || '0',
     })),
     discount:
@@ -197,6 +203,7 @@ export function availableActions(status: QuotationStatus) {
 
 export const emptyLineItem = (): LineItemDraft => ({
   key: crypto.randomUUID(),
+  stockItemId: null,
   description: '',
   quantity: '1',
   unit: '',
@@ -227,6 +234,7 @@ export function quotationToForm(quotation: QuotationDetail): QuotationFormValues
     validUntil: quotation.validUntil?.slice(0, 10) ?? '',
     items: quotation.items.map((item) => ({
       key: item.id,
+      stockItemId: item.stockItemId ?? null,
       description: item.description,
       quantity: trimZeros(item.quantity),
       unit: item.unit ?? '',

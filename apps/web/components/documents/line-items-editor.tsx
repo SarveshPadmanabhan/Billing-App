@@ -1,8 +1,21 @@
 'use client';
 
-import { Trash2, Plus } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Trash2, Plus, Package } from 'lucide-react';
 import { Button, Input, Money } from '../ui/primitives';
+import { apiFetch } from '../../lib/api-client';
 import { emptyLineItem, type LineItemDraft } from '../../lib/quotations';
+
+interface StockOption {
+  id: string;
+  sku: string;
+  name: string;
+  unit: string;
+  unitPrice: string;
+  quantityOnHand: string;
+  tracksStock: boolean;
+}
 
 /**
  * Line-item editor (Frontend Spec §12, TICKET-016).
@@ -31,15 +44,15 @@ export interface LineItemsEditorProps {
 function previewLine(item: LineItemDraft) {
   const quantity = Number(item.quantity) || 0;
   const unitPrice = Number(item.unitPrice) || 0;
-  const discountRate = Number(item.discountRate) || 0;
   const taxRate = Number(item.taxRate) || 0;
 
-  const gross = quantity * unitPrice;
-  const discount = (gross * discountRate) / 100;
-  const net = gross - discount;
+  // Per-line discount was removed from the editor, so a new line never carries
+  // one. Documents created before that keep theirs, and the server still
+  // honours the stored value — this preview only describes what is on screen.
+  const net = quantity * unitPrice;
   const tax = (net * taxRate) / 100;
 
-  return { gross, discount, net, tax, total: net + tax };
+  return { gross: net, discount: 0, net, tax, total: net + tax };
 }
 
 export function previewTotals(items: LineItemDraft[], documentDiscountRate: string) {
@@ -88,11 +101,11 @@ export function LineItemsEditor({
 
   return (
     <div className="flex flex-col gap-3">
-      {/* The editor is wide by nature (8 columns). It scrolls inside this
+      {/* The editor is wide by nature (6 columns). It scrolls inside this
           container rather than pushing the page sideways — Frontend Spec §14
           allows controlled horizontal scrolling for tables. */}
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[860px] border-collapse">
+        <table className="w-full min-w-[680px] border-collapse">
           <caption className="sr-only">Line items</caption>
           <thead>
             <tr className="border-b border-border">
@@ -105,14 +118,8 @@ export function LineItemsEditor({
               <th scope="col" className="w-24 pb-2 text-right text-caption font-semibold text-ink-secondary">
                 Qty <span className="text-danger">*</span>
               </th>
-              <th scope="col" className="w-24 pb-2 text-left text-caption font-semibold text-ink-secondary">
-                Unit
-              </th>
               <th scope="col" className="w-32 pb-2 text-right text-caption font-semibold text-ink-secondary">
                 Rate <span className="text-danger">*</span>
-              </th>
-              <th scope="col" className="w-24 pb-2 text-right text-caption font-semibold text-ink-secondary">
-                Disc %
               </th>
               <th scope="col" className="w-24 pb-2 text-right text-caption font-semibold text-ink-secondary">
                 Tax %
@@ -135,13 +142,24 @@ export function LineItemsEditor({
                   <td className="py-2 pr-2 text-body-sm text-ink-muted">{index + 1}</td>
 
                   <td className="py-2 pr-2">
-                    <Input
-                      aria-label={`Description for line ${index + 1}`}
-                      value={item.description}
+                    <ProductPicker
+                      index={index}
+                      item={item}
                       disabled={disabled}
                       invalid={Boolean(fieldError('description'))}
-                      onChange={(e) => update(index, { description: e.target.value })}
-                      placeholder="What are you charging for?"
+                      onPick={(product) =>
+                        update(index, {
+                          stockItemId: product.id,
+                          description: product.name,
+                          unit: product.unit,
+                          unitPrice: product.unitPrice.replace(/\.?0+$/, ''),
+                        })
+                      }
+                      onType={(value) =>
+                        // Typing over a picked product breaks the link: the line
+                        // is no longer that product, so it must not deduct it.
+                        update(index, { description: value, stockItemId: null })
+                      }
                     />
                     {fieldError('description') && (
                       <p className="mt-1 text-caption text-danger">{fieldError('description')}</p>
@@ -165,16 +183,6 @@ export function LineItemsEditor({
 
                   <td className="py-2 pr-2">
                     <Input
-                      aria-label={`Unit for line ${index + 1}`}
-                      value={item.unit}
-                      disabled={disabled}
-                      onChange={(e) => update(index, { unit: e.target.value })}
-                      placeholder="hrs"
-                    />
-                  </td>
-
-                  <td className="py-2 pr-2">
-                    <Input
                       aria-label={`Unit price for line ${index + 1}`}
                       inputMode="decimal"
                       className="tabular text-right"
@@ -186,19 +194,6 @@ export function LineItemsEditor({
                     {fieldError('unitPrice') && (
                       <p className="mt-1 text-caption text-danger">{fieldError('unitPrice')}</p>
                     )}
-                  </td>
-
-                  <td className="py-2 pr-2">
-                    <Input
-                      aria-label={`Discount percent for line ${index + 1}`}
-                      inputMode="decimal"
-                      className="tabular text-right"
-                      value={item.discountRate}
-                      disabled={disabled}
-                      invalid={Boolean(fieldError('discountRate'))}
-                      onChange={(e) => update(index, { discountRate: e.target.value })}
-                      placeholder="0"
-                    />
                   </td>
 
                   <td className="py-2 pr-2">
@@ -247,6 +242,122 @@ export function LineItemsEditor({
         <p role="alert" className="text-caption text-danger">
           {errors.items}
         </p>
+      )}
+    </div>
+  );
+}
+
+
+/**
+ * Description field with a product suggestion menu.
+ *
+ * Picking a product fills the description, unit and rate, and records the
+ * stock link so the invoice deducts stock when it is sent. Free text is still
+ * allowed — services and ad-hoc charges have no product and deduct nothing.
+ *
+ * Typing over a picked product clears the link. Leaving it attached would mean
+ * a line describing one thing while deducting another.
+ */
+function ProductPicker({
+  index,
+  item,
+  disabled,
+  invalid,
+  onPick,
+  onType,
+}: {
+  index: number;
+  item: LineItemDraft;
+  disabled: boolean;
+  invalid: boolean;
+  onPick: (product: StockOption) => void;
+  onType: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const { data } = useQuery({
+    queryKey: ['stock', 'options'],
+    queryFn: () => apiFetch<{ items: StockOption[] }>('/stock?limit=100'),
+    // The list is small and reused by every line; refetching per keystroke
+    // would be a request per character for no benefit.
+    staleTime: 60_000,
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocumentClick(event: MouseEvent) {
+      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onDocumentClick);
+    return () => document.removeEventListener('mousedown', onDocumentClick);
+  }, [open]);
+
+  const term = item.description.trim().toLowerCase();
+  const matches = (data?.items ?? [])
+    .filter((p) => !term || p.name.toLowerCase().includes(term) || p.sku.toLowerCase().includes(term))
+    .slice(0, 8);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <Input
+        aria-label={`Description for line ${index + 1}`}
+        value={item.description}
+        disabled={disabled}
+        invalid={invalid}
+        autoComplete="off"
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={`product-options-${index}`}
+        onFocus={() => setOpen(true)}
+        onChange={(e) => {
+          onType(e.target.value);
+          setOpen(true);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') setOpen(false);
+        }}
+        placeholder="Search a product, or type anything"
+      />
+
+      {item.stockItemId && (
+        <span className="mt-1 inline-flex items-center gap-1 text-caption text-ink-muted">
+          <Package className="h-3 w-3" aria-hidden="true" />
+          Linked to stock — this line will be deducted
+        </span>
+      )}
+
+      {open && matches.length > 0 && (
+        <ul
+          id={`product-options-${index}`}
+          role="listbox"
+          className="absolute z-20 mt-1 max-h-64 w-full min-w-[280px] overflow-auto rounded-md border border-border bg-surface py-1 shadow-modal"
+        >
+          {matches.map((product) => (
+            <li key={product.id}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={product.id === item.stockItemId}
+                onClick={() => {
+                  onPick(product);
+                  setOpen(false);
+                }}
+                className="flex w-full items-baseline justify-between gap-3 px-3 py-2 text-left hover:bg-canvas"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-body text-ink">{product.name}</span>
+                  <span className="block truncate text-caption text-ink-muted">{product.sku}</span>
+                </span>
+                <span className="shrink-0 text-caption text-ink-muted">
+                  {product.tracksStock
+                    ? `${product.quantityOnHand.replace(/\.?0+$/, '')} ${product.unit}`
+                    : 'Not tracked'}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

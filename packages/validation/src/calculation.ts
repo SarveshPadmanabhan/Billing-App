@@ -52,6 +52,11 @@ import {
  */
 
 export interface LineItemInput {
+  /**
+   * Carried through untouched. Not financial — it links the line to a stock
+   * item so the invoice can deduct stock, and takes no part in the arithmetic.
+   */
+  stockItemId?: string | null;
   description: string;
   quantity: string | number;
   unitPrice: string | number;
@@ -73,6 +78,7 @@ export interface DocumentDiscountInput {
 
 export interface CalculatedLineItem {
   position: number;
+  stockItemId: string | null;
   description: string;
   quantity: string;
   unit: string | null;
@@ -196,6 +202,7 @@ function calculateLine(item: LineItemInput, index: number): {
   return {
     calculated: {
       position: index + 1,
+      stockItemId: item.stockItemId ?? null,
       description: item.description.trim(),
       quantity: quantity.toFixed(MONEY_SCALE),
       unit: item.unit?.trim() || null,

@@ -497,6 +497,9 @@ model Quotation {
 model QuotationItem {
   id          String  @id @default(uuid()) @db.Uuid
   quotationId String  @map("quotation_id") @db.Uuid
+  /// Optional link to a stock item, carried through to the invoice when the
+  /// quotation is converted. Null for services and ad-hoc lines.
+  stockItemId String? @map("stock_item_id") @db.Uuid
   position    Int
   description String
   quantity    Decimal @db.Decimal(19, 4)
@@ -513,9 +516,11 @@ model QuotationItem {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  stockItem StockItem? @relation(fields: [stockItemId], references: [id], onDelete: Restrict)
 
   @@unique([quotationId, position])
   @@index([quotationId])
+  @@index([stockItemId])
   @@map("quotation_items")
 }
 
@@ -748,6 +753,7 @@ model StockItem {
   company      Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
   movements    StockMovement[]
   invoiceItems InvoiceItem[]
+  quotationItems QuotationItem[]
 
   /// SKUs identify an item within its company; two companies may reuse one.
   @@unique([companyId, sku])

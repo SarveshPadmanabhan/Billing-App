@@ -8,6 +8,7 @@ import type { LineItemDraft } from './quotations';
 export interface InvoiceItem {
   id: string;
   position: number;
+  stockItemId: string | null;
   description: string;
   quantity: string;
   unit: string | null;
@@ -109,11 +110,15 @@ function toPayload(values: InvoiceFormValues) {
     issueDate: values.issueDate,
     dueDate: values.dueDate || null,
     items: values.items.map((item) => ({
+      stockItemId: item.stockItemId,
       description: item.description.trim(),
       quantity: item.quantity || '0',
+      // Unit is no longer edited per line — it comes from the picked product.
       unit: item.unit.trim() || null,
       unitPrice: item.unitPrice || '0',
-      discountRate: item.discountRate && Number(item.discountRate) > 0 ? item.discountRate : null,
+      // Per-line discount was removed from the editor. Existing documents keep
+      // theirs; new lines are always created without one.
+      discountRate: null,
       taxRate: item.taxRate || '0',
     })),
     discount:
@@ -196,6 +201,7 @@ export function emptyInvoiceForm(defaultTaxRate = '0', paymentTermsDays = 30): I
     items: [
       {
         key: crypto.randomUUID(),
+        stockItemId: null,
         description: '',
         quantity: '1',
         unit: '',
@@ -220,6 +226,7 @@ export function invoiceToForm(invoice: InvoiceDetail): InvoiceFormValues {
     dueDate: invoice.dueDate.slice(0, 10),
     items: invoice.items.map((item) => ({
       key: item.id,
+      stockItemId: item.stockItemId ?? null,
       description: item.description,
       quantity: trimZeros(item.quantity),
       unit: item.unit ?? '',

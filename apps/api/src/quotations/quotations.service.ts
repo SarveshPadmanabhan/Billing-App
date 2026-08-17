@@ -65,6 +65,9 @@ const QUOTATION_SELECT = {
 const ITEM_SELECT = {
   id: true,
   position: true,
+  // Carried so a duplicate or a quotation->invoice conversion keeps the stock
+  // link; without it a converted invoice would silently stop deducting stock.
+  stockItemId: true,
   description: true,
   quantity: true,
   unit: true,
@@ -225,6 +228,7 @@ export class QuotationsService {
             items: {
               create: totals.items.map((item) => ({
                 position: item.position,
+                stockItemId: item.stockItemId,
                 description: item.description,
                 quantity: item.quantity,
                 unit: item.unit,
@@ -606,6 +610,7 @@ export class QuotationsService {
             items: {
               create: source.items.map((item) => ({
                 position: item.position,
+                stockItemId: item.stockItemId,
                 description: item.description,
                 quantity: item.quantity,
                 unit: item.unit,
@@ -789,6 +794,7 @@ export class QuotationsService {
             items: {
               create: quotation.items.map((item) => ({
                 position: item.position,
+                stockItemId: item.stockItemId,
                 description: item.description,
                 quantity: item.quantity,
                 unit: item.unit,

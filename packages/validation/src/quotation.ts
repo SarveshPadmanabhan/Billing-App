@@ -37,6 +37,12 @@ const percentInput = (field: string) =>
 
 export const quotationItemSchema = z
   .object({
+    /**
+     * Optional link to a stock item. Set when the line was picked from the
+     * product list; null for services and ad-hoc lines, which are invoiced
+     * without touching stock.
+     */
+    stockItemId: uuidSchema.optional().nullable(),
     description: z.string().trim().min(1, 'Description is required').max(2000),
     quantity: decimalInput('Quantity'),
     unit: z.string().trim().max(30).optional().nullable(),
