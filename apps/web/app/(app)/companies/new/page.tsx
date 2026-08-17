@@ -65,19 +65,50 @@ export default function NewCompanyPage() {
     setValues((prev) => ({ ...prev, [key]: value }));
   }
 
+  /**
+   * Validate one prefix. Mirrors the server rule.
+   *
+   * A prefix ending in a digit runs straight into the zero-padded number:
+   * "QUO-1" + "000001" reads as QUO-1000001, which could equally be prefix
+   * "QUO-" with number 1000001. The document number stops being parseable
+   * back into its parts, so the trailing digit is rejected.
+   */
+  function prefixError(label: string, value: string): string | undefined {
+    const trimmed = value.trim();
+    if (!trimmed) return `${label} prefix is required`;
+    if (/[0-9]$/.test(trimmed)) {
+      return `Prefix cannot end in a digit — "${trimmed}" would produce ${trimmed}000001, which is ambiguous. Try "${trimmed.replace(/[0-9]+$/, '')}".`;
+    }
+    return undefined;
+  }
+
   function validate(): boolean {
     const next: Record<string, string> = {};
     if (!values.name.trim()) next.name = 'Company name is required';
-    // Mirrors the server rule: a prefix ending in a digit would run into the
-    // padded number and make "ABC1000001" impossible to read back.
-    if (!values.invoicePrefix.trim()) next.invoicePrefix = 'Invoice prefix is required';
-    else if (/[0-9]$/.test(values.invoicePrefix.trim()))
-      next.invoicePrefix = 'Prefix must not end in a digit';
-    if (!values.quotationPrefix.trim()) next.quotationPrefix = 'Quotation prefix is required';
-    else if (/[0-9]$/.test(values.quotationPrefix.trim()))
-      next.quotationPrefix = 'Prefix must not end in a digit';
+
+    const invoice = prefixError('Invoice', values.invoicePrefix);
+    if (invoice) next.invoicePrefix = invoice;
+    const quotation = prefixError('Quotation', values.quotationPrefix);
+    if (quotation) next.quotationPrefix = quotation;
+
     setErrors(next);
     return Object.keys(next).length === 0;
+  }
+
+  /**
+   * Clear a field's error as soon as the user edits it.
+   *
+   * Without this an error set on a previous submit outlives the value that
+   * caused it: emptying a rejected prefix left "must not end in a digit"
+   * sitting under a blank box, describing input that was no longer there.
+   */
+  function setField<K extends keyof CompanyForm>(key: K, value: CompanyForm[K]) {
+    set(key, value);
+    setErrors((prev) => {
+      if (!prev[key]) return prev;
+      const { [key]: _removed, ...rest } = prev;
+      return rest;
+    });
   }
 
   async function handleSubmit(event: React.FormEvent) {
@@ -158,7 +189,7 @@ export default function NewCompanyPage() {
             id="name"
             value={values.name}
             invalid={Boolean(errors.name)}
-            onChange={(e) => set('name', e.target.value)}
+            onChange={(e) => setField('name', e.target.value)}
           />
         </Field>
 
@@ -167,14 +198,14 @@ export default function NewCompanyPage() {
             <Input
               id="legalName"
               value={values.legalName}
-              onChange={(e) => set('legalName', e.target.value)}
+              onChange={(e) => setField('legalName', e.target.value)}
             />
           </Field>
           <Field label="Tax / GST number" htmlFor="taxNumber" error={errors.taxNumber}>
             <Input
               id="taxNumber"
               value={values.taxNumber}
-              onChange={(e) => set('taxNumber', e.target.value)}
+              onChange={(e) => setField('taxNumber', e.target.value)}
             />
           </Field>
         </div>
@@ -186,11 +217,11 @@ export default function NewCompanyPage() {
               type="email"
               value={values.email}
               invalid={Boolean(errors.email)}
-              onChange={(e) => set('email', e.target.value)}
+              onChange={(e) => setField('email', e.target.value)}
             />
           </Field>
           <Field label="Phone" htmlFor="phone" error={errors.phone}>
-            <Input id="phone" value={values.phone} onChange={(e) => set('phone', e.target.value)} />
+            <Input id="phone" value={values.phone} onChange={(e) => setField('phone', e.target.value)} />
           </Field>
         </div>
       </Card>
@@ -201,15 +232,15 @@ export default function NewCompanyPage() {
           <Input
             id="addressLine1"
             value={values.addressLine1}
-            onChange={(e) => set('addressLine1', e.target.value)}
+            onChange={(e) => setField('addressLine1', e.target.value)}
           />
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="City" htmlFor="city" error={errors.city}>
-            <Input id="city" value={values.city} onChange={(e) => set('city', e.target.value)} />
+            <Input id="city" value={values.city} onChange={(e) => setField('city', e.target.value)} />
           </Field>
           <Field label="State" htmlFor="state" error={errors.state}>
-            <Input id="state" value={values.state} onChange={(e) => set('state', e.target.value)} />
+            <Input id="state" value={values.state} onChange={(e) => setField('state', e.target.value)} />
           </Field>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -217,14 +248,14 @@ export default function NewCompanyPage() {
             <Input
               id="postalCode"
               value={values.postalCode}
-              onChange={(e) => set('postalCode', e.target.value)}
+              onChange={(e) => setField('postalCode', e.target.value)}
             />
           </Field>
           <Field label="Country" htmlFor="countryCode">
             <Select
               id="countryCode"
               value={values.countryCode}
-              onChange={(e) => set('countryCode', e.target.value)}
+              onChange={(e) => setField('countryCode', e.target.value)}
             >
               {COUNTRIES.map(([code, label]) => (
                 <option key={code} value={code}>
@@ -254,7 +285,7 @@ export default function NewCompanyPage() {
               id="invoicePrefix"
               value={values.invoicePrefix}
               invalid={Boolean(errors.invoicePrefix)}
-              onChange={(e) => set('invoicePrefix', e.target.value)}
+              onChange={(e) => setField('invoicePrefix', e.target.value)}
             />
           </Field>
           <Field
@@ -267,7 +298,7 @@ export default function NewCompanyPage() {
               id="quotationPrefix"
               value={values.quotationPrefix}
               invalid={Boolean(errors.quotationPrefix)}
-              onChange={(e) => set('quotationPrefix', e.target.value)}
+              onChange={(e) => setField('quotationPrefix', e.target.value)}
             />
           </Field>
         </div>
