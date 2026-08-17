@@ -356,9 +356,16 @@ function ProductPicker({
   }, [open]);
 
   const term = item.description.trim().toLowerCase();
-  const matches = (data?.items ?? [])
-    .filter((p) => !term || p.name.toLowerCase().includes(term) || p.sku.toLowerCase().includes(term))
-    .slice(0, 8);
+  // Suggestions appear only once something is typed. An empty field lists
+  // nothing: the menu would otherwise cover the row the moment the field takes
+  // focus, including when tabbing through the form.
+  const matches = !term
+    ? []
+    : (data?.items ?? [])
+        .filter(
+          (p) => p.name.toLowerCase().includes(term) || p.sku.toLowerCase().includes(term),
+        )
+        .slice(0, 8);
 
   return (
     <div ref={containerRef} className="relative">
@@ -369,9 +376,8 @@ function ProductPicker({
         invalid={invalid}
         autoComplete="off"
         role="combobox"
-        aria-expanded={open}
+        aria-expanded={open && matches.length > 0}
         aria-controls={`product-options-${index}`}
-        onFocus={() => setOpen(true)}
         onChange={(e) => {
           onType(e.target.value);
           setOpen(true);
