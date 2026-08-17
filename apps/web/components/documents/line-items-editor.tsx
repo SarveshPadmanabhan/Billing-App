@@ -355,13 +355,14 @@ function ProductPicker({
     };
   }, [open]);
 
+  const allProducts = data?.items ?? [];
   const term = item.description.trim().toLowerCase();
   // Suggestions appear only once something is typed. An empty field lists
   // nothing: the menu would otherwise cover the row the moment the field takes
   // focus, including when tabbing through the form.
   const matches = !term
     ? []
-    : (data?.items ?? [])
+    : allProducts
         .filter(
           (p) => p.name.toLowerCase().includes(term) || p.sku.toLowerCase().includes(term),
         )
@@ -394,6 +395,30 @@ function ProductPicker({
           Linked to stock — this line will be deducted
         </span>
       )}
+
+      {open &&
+        term.length > 0 &&
+        matches.length === 0 &&
+        position &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            style={{
+              left: position.left,
+              width: Math.max(position.width, 280),
+              ...(position.top !== undefined ? { top: position.top } : {}),
+              ...(position.bottom !== undefined ? { bottom: position.bottom } : {}),
+            }}
+            className="fixed z-50 rounded-md border border-border bg-surface px-3 py-2 shadow-modal"
+          >
+            <p className="text-caption text-ink-muted">
+              {allProducts.length === 0
+                ? 'No products in your stock list yet — this line will be free text.'
+                : `No product matches "${item.description.trim()}" — this line will be free text.`}
+            </p>
+          </div>,
+          document.body,
+        )}
 
       {open &&
         matches.length > 0 &&
