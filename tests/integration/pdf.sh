@@ -43,7 +43,7 @@ curl -s -m 15 -b "$JAR" -c "$JAR" -X POST "$BASE/organisations" -H 'Content-Type
   -d '{"name":"PDF Test Org","currencyCode":"INR","countryCode":"IN"}' -o /dev/null
 
 CUST=$(curl -s -m 10 -b "$JAR" -X POST "$BASE/customers" -H 'Content-Type: application/json' \
-  -d '{"customerType":"COMPANY","companyName":"PDF Client","email":"ap@pdfclient.test"}' | jqp "['data']['id']")
+  -d '{"customerType":"COMPANY","companyName":"PDF Client","email":"ap@pdfclient.test","billing":{"addressLine1":"1 High St","city":"Pune","state":"Maharashtra","postalCode":"411001","countryCode":"IN"}}' | jqp "['data']['id']")
 
 make_quotation() {
   curl -s -m 15 -b "$JAR" -X POST "$BASE/quotations" -H 'Content-Type: application/json' \

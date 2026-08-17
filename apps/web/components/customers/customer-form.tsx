@@ -119,6 +119,21 @@ export function CustomerForm({
       next.email = 'Enter a valid email address';
     }
 
+    // Mirrors requireBillingAddress() in @billing/validation. This is a
+    // convenience so the user is told before a round trip; the server rejects
+    // the same fields independently and its errors overwrite these on submit.
+    for (const [field, label] of [
+      ['addressLine1', 'Address line 1'],
+      ['city', 'City'],
+      ['state', 'State'],
+      ['postalCode', 'Postal code'],
+      ['countryCode', 'Country'],
+    ] as const) {
+      if (!values.billing[field]?.trim()) {
+        next[`billing.${field}`] = `${label} is required`;
+      }
+    }
+
     setErrors(next);
     return Object.keys(next).length === 0;
   }
@@ -231,7 +246,7 @@ export function CustomerForm({
 
       <Card className="flex flex-col gap-4">
         <h2 className="text-h4 text-ink">Billing address</h2>
-        <AddressFields kind="billing" values={values.billing} onChange={setAddress} />
+        <AddressFields kind="billing" values={values.billing} onChange={setAddress} errors={errors} />
       </Card>
 
       <Card className="flex flex-col gap-4">
@@ -253,7 +268,7 @@ export function CustomerForm({
             The billing address will be used for shipping.
           </p>
         ) : (
-          <AddressFields kind="shipping" values={values.shipping} onChange={setAddress} />
+          <AddressFields kind="shipping" values={values.shipping} onChange={setAddress} errors={errors} />
         )}
       </Card>
 
@@ -285,14 +300,29 @@ function AddressFields({
   kind,
   values,
   onChange,
+  errors = {},
 }: {
   kind: 'billing' | 'shipping';
   values: CustomerFormValues['billing'];
   onChange: (kind: 'billing' | 'shipping', field: string, value: string) => void;
+  errors?: Record<string, string>;
 }) {
+  // A billing address is a legal record of who was charged and in which tax
+  // jurisdiction, so an invoice cannot be issued without one. The shipping
+  // address stays optional, which is why this is per-kind rather than fixed.
+  // Mirrors requireBillingAddress() in @billing/validation — the server
+  // rejects these independently; the asterisk only tells the user in advance.
+  const required = kind === 'billing';
+  const fieldError = (field: string) => errors[`${kind}.${field}`];
+
   return (
     <>
-      <Field label="Address line 1" htmlFor={`${kind}-line1`}>
+      <Field
+          label="Address line 1"
+          htmlFor={`${kind}-line1`}
+          required={required}
+          error={fieldError('addressLine1')}
+        >
         <Input
           id={`${kind}-line1`}
           value={values.addressLine1}
@@ -307,14 +337,24 @@ function AddressFields({
         />
       </Field>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="City" htmlFor={`${kind}-city`}>
+        <Field
+          label="City"
+          htmlFor={`${kind}-city`}
+          required={required}
+          error={fieldError('city')}
+        >
           <Input
             id={`${kind}-city`}
             value={values.city}
             onChange={(e) => onChange(kind, 'city', e.target.value)}
           />
         </Field>
-        <Field label="State" htmlFor={`${kind}-state`}>
+        <Field
+          label="State"
+          htmlFor={`${kind}-state`}
+          required={required}
+          error={fieldError('state')}
+        >
           <Input
             id={`${kind}-state`}
             value={values.state}
@@ -323,14 +363,24 @@ function AddressFields({
         </Field>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Postal code" htmlFor={`${kind}-postal`}>
+        <Field
+          label="Postal code"
+          htmlFor={`${kind}-postal`}
+          required={required}
+          error={fieldError('postalCode')}
+        >
           <Input
             id={`${kind}-postal`}
             value={values.postalCode}
             onChange={(e) => onChange(kind, 'postalCode', e.target.value)}
           />
         </Field>
-        <Field label="Country" htmlFor={`${kind}-country`}>
+        <Field
+          label="Country"
+          htmlFor={`${kind}-country`}
+          required={required}
+          error={fieldError('countryCode')}
+        >
           <Select
             id={`${kind}-country`}
             value={values.countryCode}

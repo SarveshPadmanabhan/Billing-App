@@ -60,7 +60,19 @@ async function signInToScratchOrg(page: Page): Promise<void> {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customerType: 'COMPANY', companyName: 'Scratch Client' }),
+        body: JSON.stringify({
+          customerType: 'COMPANY',
+          companyName: 'Scratch Client',
+          // Required: an invoice records the billing address as evidence of
+          // the tax jurisdiction charged.
+          billing: {
+            addressLine1: '1 Scratch Lane',
+            city: 'Pune',
+            state: 'Maharashtra',
+            postalCode: '411001',
+            countryCode: 'IN',
+          },
+        }),
       });
     },
     [API_URL, email, SCRATCH_PASSWORD] as const,
@@ -158,6 +170,12 @@ test.describe('smoke', () => {
     await page.goto('/customers/new');
     await page.fill('#companyName', name);
     await page.fill('#email', 'smoke@test.local');
+    // Billing address is required (invoice tax jurisdiction), so a customer
+    // cannot be created without one.
+    await page.fill('#billing-line1', '10 Test Street');
+    await page.fill('#billing-city', 'Bengaluru');
+    await page.fill('#billing-state', 'Karnataka');
+    await page.fill('#billing-postal', '560001');
     await page.click('button[type=submit]');
 
     // Landing on the detail page proves the write reached the database and the

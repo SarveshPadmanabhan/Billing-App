@@ -74,8 +74,12 @@ test.describe('core MVP workflow', () => {
     await page.goto('/customers/new');
     await page.fill('#companyName', 'Journey Customer Ltd');
     await page.fill('#email', 'ap@journey.test');
+    // Billing address is required (invoice tax jurisdiction), so a customer
+    // cannot be created without one.
     await page.fill('#billing-line1', '10 Test Street');
     await page.fill('#billing-city', 'Bengaluru');
+    await page.fill('#billing-state', 'Karnataka');
+    await page.fill('#billing-postal', '560001');
     await page.click('button[type=submit]');
 
     await page.waitForURL(/\/customers\/[0-9a-f-]{36}$/);

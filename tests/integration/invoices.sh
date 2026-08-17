@@ -60,9 +60,9 @@ echo
 A_ORG=$(setup_org "inv-a-$STAMP@test.local" "$A_JAR" "Inv Org A")
 B_ORG=$(setup_org "inv-b-$STAMP@test.local" "$B_JAR" "Inv Org B")
 A_CUST=$(curl -s -m 10 -b "$A_JAR" -X POST "$BASE/customers" -H 'Content-Type: application/json' \
-  -d '{"customerType":"COMPANY","companyName":"Invoice Client A"}' | jqp "['data']['id']")
+  -d '{"customerType":"COMPANY","companyName":"Invoice Client A","billing":{"addressLine1":"1 High St","city":"Pune","state":"Maharashtra","postalCode":"411001","countryCode":"IN"}}' | jqp "['data']['id']")
 B_CUST=$(curl -s -m 10 -b "$B_JAR" -X POST "$BASE/customers" -H 'Content-Type: application/json' \
-  -d '{"customerType":"COMPANY","companyName":"Invoice Client B"}' | jqp "['data']['id']")
+  -d '{"customerType":"COMPANY","companyName":"Invoice Client B","billing":{"addressLine1":"1 High St","city":"Pune","state":"Maharashtra","postalCode":"411001","countryCode":"IN"}}' | jqp "['data']['id']")
 
 for pair in "A_ORG:$A_ORG" "B_ORG:$B_ORG" "A_CUST:$A_CUST" "B_CUST:$B_CUST"; do
   is_uuid "${pair#*:}" || { echo "  fixture setup failed: ${pair%%:*}='${pair#*:}'"; exit 1; }

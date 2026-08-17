@@ -46,7 +46,7 @@ setup_org() {
 
 new_customer() {
   curl -s -m 10 -b "$1" -X POST "$BASE/customers" -H 'Content-Type: application/json' \
-    -d "{\"customerType\":\"COMPANY\",\"companyName\":\"$2\"}" | jqp "['data']['id']"
+    -d "{\"customerType\":\"COMPANY\",\"companyName\":\"$2\",\"billing\":{\"addressLine1\":\"1 High St\",\"city\":\"Pune\",\"state\":\"Maharashtra\",\"postalCode\":\"411001\",\"countryCode\":\"IN\"}}" | jqp "['data']['id']"
 }
 
 # Creates a quotation; echoes its id.

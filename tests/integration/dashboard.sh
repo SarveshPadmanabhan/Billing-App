@@ -47,7 +47,7 @@ curl -s -m 15 -c "$JAR" -X POST "$BASE/auth/sign-in/email" -H 'Content-Type: app
 ORG=$(curl -s -m 15 -b "$JAR" -c "$JAR" -X POST "$BASE/organisations" -H 'Content-Type: application/json' \
   -d '{"name":"Dashboard Org","currencyCode":"INR","countryCode":"IN"}' | jqp "['data']['id']")
 CUST=$(curl -s -m 10 -b "$JAR" -X POST "$BASE/customers" -H 'Content-Type: application/json' \
-  -d '{"customerType":"COMPANY","companyName":"Dashboard Client"}' | jqp "['data']['id']")
+  -d '{"customerType":"COMPANY","companyName":"Dashboard Client","billing":{"addressLine1":"1 High St","city":"Pune","state":"Maharashtra","postalCode":"411001","countryCode":"IN"}}' | jqp "['data']['id']")
 
 is_uuid "$ORG" && is_uuid "$CUST" || { echo "  fixture setup failed"; exit 1; }
 

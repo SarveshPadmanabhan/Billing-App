@@ -78,7 +78,7 @@ echo
 A_ORG=$(setup_org "pay-a-$STAMP@test.local" "$A_JAR" "Pay Org A")
 B_ORG=$(setup_org "pay-b-$STAMP@test.local" "$B_JAR" "Pay Org B")
 A_CUST=$(curl -s -m 10 -b "$A_JAR" -X POST "$BASE/customers" -H 'Content-Type: application/json' \
-  -d '{"customerType":"COMPANY","companyName":"Paying Client"}' | jqp "['data']['id']")
+  -d '{"customerType":"COMPANY","companyName":"Paying Client","billing":{"addressLine1":"1 High St","city":"Pune","state":"Maharashtra","postalCode":"411001","countryCode":"IN"}}' | jqp "['data']['id']")
 for pair in "A_ORG:$A_ORG" "B_ORG:$B_ORG" "A_CUST:$A_CUST"; do
   is_uuid "${pair#*:}" || { echo "  fixture setup failed: ${pair%%:*}='${pair#*:}'"; exit 1; }
 done

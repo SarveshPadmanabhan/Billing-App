@@ -55,7 +55,7 @@ setup_org() {
 A_ORG=$(setup_org "acc-a-$STAMP@test.local" "$A_JAR" "Acceptance Org A")
 B_ORG=$(setup_org "acc-b-$STAMP@test.local" "$B_JAR" "Acceptance Org B")
 A_CUST=$(curl -s -m 10 -b "$A_JAR" -X POST "$BASE/customers" -H 'Content-Type: application/json' \
-  -d '{"customerType":"COMPANY","companyName":"Acceptance Client"}' | jqp "['data']['id']")
+  -d '{"customerType":"COMPANY","companyName":"Acceptance Client","billing":{"addressLine1":"1 High St","city":"Pune","state":"Maharashtra","postalCode":"411001","countryCode":"IN"}}' | jqp "['data']['id']")
 is_uuid "$A_ORG" && is_uuid "$A_CUST" || { echo "fixture setup failed"; exit 1; }
 
 # A sent invoice with a payment, reused across several checks.

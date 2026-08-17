@@ -58,7 +58,7 @@ create_customer() {
   local jar="$1" name="$2"
   curl -s -m 15 -b "$jar" -X POST "$BASE/customers" \
     -H 'Content-Type: application/json' \
-    -d "{\"companyName\":\"$name\"}"
+    -d "{\"companyName\":\"$name\",\"billing\":{\"addressLine1\":\"1 High St\",\"city\":\"Pune\",\"state\":\"Maharashtra\",\"postalCode\":\"411001\",\"countryCode\":\"IN\"}}"
 }
 
 echo "Setting up two organisations..."

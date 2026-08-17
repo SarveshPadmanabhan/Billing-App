@@ -66,7 +66,7 @@ echo
 echo "1. Create (TICKET-010)"
 
 CREATED=$(curl -s -m 10 -b "$A_JAR" -X POST "$BASE/customers" -H 'Content-Type: application/json' \
-  -d '{"customerType":"COMPANY","companyName":"Alpha Client","email":"ap@alpha.test","billing":{"addressLine1":"1 High St","city":"Pune","countryCode":"IN"},"shippingSameAsBilling":true}')
+  -d '{"customerType":"COMPANY","companyName":"Alpha Client","email":"ap@alpha.test","billing":{"addressLine1":"1 High St","city":"Pune","state":"Maharashtra","postalCode":"411001","countryCode":"IN"},"shippingSameAsBilling":true}')
 CUST_ID=$(printf '%s' "$CREATED" | jqp "['data']['id']")
 [ -n "$CUST_ID" ] && pass "Company customer created" || fail "Company customer created" "$CREATED"
 
@@ -76,7 +76,7 @@ check "1 High St" "$(printf '%s' "$CREATED" | jqp "['data']['shippingAddressLine
 check "COMPANY" "$(printf '%s' "$CREATED" | jqp "['data']['customerType']")" "customerType stored"
 
 IND=$(curl -s -m 10 -b "$A_JAR" -X POST "$BASE/customers" -H 'Content-Type: application/json' \
-  -d '{"customerType":"INDIVIDUAL","contactName":"Ravi Kumar","phone":"+91 90000 00000"}')
+  -d '{"customerType":"INDIVIDUAL","contactName":"Ravi Kumar","phone":"+91 90000 00000","billing":{"addressLine1":"1 High St","city":"Pune","state":"Maharashtra","postalCode":"411001","countryCode":"IN"}}')
 [ -n "$(printf '%s' "$IND" | jqp "['data']['id']")" ] && pass "Individual customer created" \
   || fail "Individual customer created" "$IND"
 
@@ -94,7 +94,7 @@ check "VALIDATION_ERROR" "$(curl -s -m 10 -b "$A_JAR" -X POST "$BASE/customers" 
 
 # Unicode and long names (Security Doc §27).
 UNI=$(curl -s -m 10 -b "$A_JAR" -X POST "$BASE/customers" -H 'Content-Type: application/json' \
-  -d '{"customerType":"COMPANY","companyName":"Ünïcode Ltd 株式会社 🏢"}')
+  -d '{"customerType":"COMPANY","companyName":"Ünïcode Ltd 株式会社 🏢","billing":{"addressLine1":"1 High St","city":"Pune","state":"Maharashtra","postalCode":"411001","countryCode":"IN"}}')
 [ -n "$(printf '%s' "$UNI" | jqp "['data']['id']")" ] && pass "Unicode company name accepted" \
   || fail "Unicode company name accepted" "$UNI"
 

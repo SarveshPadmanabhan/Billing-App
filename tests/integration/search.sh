@@ -52,11 +52,11 @@ B_ORG=$(setup_org "srch-b-$STAMP@test.local" "$B_JAR" "Search Org B")
 
 # Distinctive fixture names so matches are unambiguous.
 CUST_ZEP=$(curl -s -m 10 -b "$A_JAR" -X POST "$BASE/customers" -H 'Content-Type: application/json' \
-  -d '{"customerType":"COMPANY","companyName":"Zephyr Dynamics","email":"ap@zephyr.test"}' | jqp "['data']['id']")
+  -d '{"customerType":"COMPANY","companyName":"Zephyr Dynamics","email":"ap@zephyr.test","billing":{"addressLine1":"1 High St","city":"Pune","state":"Maharashtra","postalCode":"411001","countryCode":"IN"}}' | jqp "['data']['id']")
 CUST_ORB=$(curl -s -m 10 -b "$A_JAR" -X POST "$BASE/customers" -H 'Content-Type: application/json' \
-  -d '{"customerType":"COMPANY","companyName":"Orbital Freight","email":"ap@orbital.test"}' | jqp "['data']['id']")
+  -d '{"customerType":"COMPANY","companyName":"Orbital Freight","email":"ap@orbital.test","billing":{"addressLine1":"1 High St","city":"Pune","state":"Maharashtra","postalCode":"411001","countryCode":"IN"}}' | jqp "['data']['id']")
 B_CUST=$(curl -s -m 10 -b "$B_JAR" -X POST "$BASE/customers" -H 'Content-Type: application/json' \
-  -d '{"customerType":"COMPANY","companyName":"Zephyr Rival Ltd"}' | jqp "['data']['id']")
+  -d '{"customerType":"COMPANY","companyName":"Zephyr Rival Ltd","billing":{"addressLine1":"1 High St","city":"Pune","state":"Maharashtra","postalCode":"411001","countryCode":"IN"}}' | jqp "['data']['id']")
 
 for pair in "A_ORG:$A_ORG" "B_ORG:$B_ORG" "CUST_ZEP:$CUST_ZEP" "CUST_ORB:$CUST_ORB" "B_CUST:$B_CUST"; do
   is_uuid "${pair#*:}" || { echo "  fixture setup failed: ${pair%%:*}='${pair#*:}'"; exit 1; }

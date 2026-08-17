@@ -36,6 +36,45 @@ const addressFields = {
 
 export const CUSTOMER_TYPES = ['INDIVIDUAL', 'COMPANY'] as const;
 
+/**
+ * Billing address fields that must be present.
+ *
+ * An invoice carries the billing address as a legal record of who was charged
+ * and in which tax jurisdiction, so these cannot be filled in later. State is
+ * included because GST and sales-tax treatment depend on it.
+ *
+ * Deliberately NOT applied to the shipping address, which is genuinely
+ * optional, nor to `addressLine2`, which is empty for most real addresses.
+ *
+ * Existing customers with incomplete addresses stay readable — this validates
+ * writes, not reads. An old record is only forced to comply when someone edits
+ * it, so no backfill is required and nothing already stored breaks.
+ */
+const REQUIRED_BILLING_FIELDS = [
+  ['addressLine1', 'Address line 1'],
+  ['city', 'City'],
+  ['state', 'State'],
+  ['postalCode', 'Postal code'],
+  ['countryCode', 'Country'],
+] as const;
+
+function requireBillingAddress(
+  billing: Record<string, unknown> | null | undefined,
+  ctx: z.RefinementCtx,
+): void {
+  for (const [field, label] of REQUIRED_BILLING_FIELDS) {
+    // optionalTrimmed turns '' into null, so a whitespace-only value is
+    // already normalised to null by the time it reaches here.
+    if (!billing?.[field]) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['billing', field],
+        message: `${label} is required`,
+      });
+    }
+  }
+}
+
 export const createCustomerSchema = z
   .object({
     customerType: z.enum(CUSTOMER_TYPES).default('COMPANY'),
@@ -72,6 +111,8 @@ export const createCustomerSchema = z
         message: 'Contact name is required for an individual customer',
       });
     }
+
+    requireBillingAddress(data.billing, ctx);
   });
 
 /**
@@ -97,6 +138,15 @@ export const updateCustomerSchema = z.object({
    * rejected if the record changed since the client loaded it.
    */
   expectedUpdatedAt: z.string().datetime().optional(),
+}).superRefine((data, ctx) => {
+  // Only validate the address when the caller actually sends one. This is a
+  // partial update: omitting `billing` means "leave it alone", and a request
+  // changing only a phone number must not be rejected for an incomplete
+  // address it never touched. But once `billing` is present it must be
+  // complete, so an edit cannot blank out fields an invoice depends on.
+  if (data.billing !== undefined) {
+    requireBillingAddress(data.billing, ctx);
+  }
 });
 
 export const customerListQuerySchema = paginationSchema.extend({
