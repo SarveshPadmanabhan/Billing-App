@@ -8,6 +8,7 @@ import {
   FileText,
   Receipt,
   CreditCard,
+  Package,
   BarChart3,
   Settings,
   type LucideIcon,
@@ -31,6 +32,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Quotations', href: '/quotations', icon: FileText },
   { label: 'Invoices', href: '/invoices', icon: Receipt },
   { label: 'Payments', href: '/payments', icon: CreditCard },
+  { label: 'Stock', href: '/stock', icon: Package },
   { label: 'Reports', href: '/reports', icon: BarChart3 },
   { label: 'Settings', href: '/settings', icon: Settings },
 ];

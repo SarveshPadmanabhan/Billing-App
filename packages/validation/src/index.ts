@@ -2,6 +2,7 @@ export * from './money.js';
 export * from './schemas.js';
 export * from './calculation.js';
 export * from './company.js';
+export * from './stock.js';
 export * from './customer.js';
 export * from './quotation.js';
 export * from './invoice.js';

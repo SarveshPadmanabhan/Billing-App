@@ -93,6 +93,17 @@ enum PaymentStatus {
   @@map("payment_status")
 }
 
+enum StockMovementType {
+  /// Stock received: purchase, return from a customer, opening balance.
+  IN
+  /// Stock leaving: sale against an invoice, damage, write-off.
+  OUT
+  /// Manual correction after a physical count.
+  ADJUSTMENT
+
+  @@map("stock_movement_type")
+}
+
 enum NotificationChannel {
   EMAIL
   SMS
@@ -250,6 +261,8 @@ model Organisation {
   documents         Document[]
   notifications     Notification[]
   auditLogs         AuditLog[]
+  stockItems        StockItem[]
+  stockMovements    StockMovement[]
 
   @@map("organisations")
 }
@@ -303,6 +316,8 @@ model Company {
   invoices          Invoice[]
   payments          Payment[]
   documents         Document[]
+  stockItems        StockItem[]
+  stockMovements    StockMovement[]
 
   @@index([organisationId])
   @@index([organisationId, isArchived])
@@ -558,6 +573,8 @@ model Invoice {
   @@index([organisationId, customerId])
   @@index([organisationId, issueDate])
   @@index([organisationId, dueDate])
+  stockMovements StockMovement[]
+
   @@index([organisationId, companyId])
   @@map("invoices")
 }
@@ -565,6 +582,9 @@ model Invoice {
 model InvoiceItem {
   id          String  @id @default(uuid()) @db.Uuid
   invoiceId   String  @map("invoice_id") @db.Uuid
+  /// Optional link to a stock item. Null for services and ad-hoc lines, which
+  /// are invoiced without touching stock.
+  stockItemId String? @map("stock_item_id") @db.Uuid
   position    Int
   description String
   quantity    Decimal @db.Decimal(19, 4)
@@ -580,10 +600,12 @@ model InvoiceItem {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoice   Invoice    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  stockItem StockItem? @relation(fields: [stockItemId], references: [id], onDelete: Restrict)
 
   @@unique([invoiceId, position])
   @@index([invoiceId])
+  @@index([stockItemId])
   @@map("invoice_items")
 }
 
@@ -687,6 +709,82 @@ model Document {
   @@index([organisationId, entityId, contentHash])
   @@index([organisationId, companyId])
   @@map("documents")
+}
+
+/// An item held in stock, scoped to a company.
+///
+/// quantityOnHand is stored for query speed but is DERIVED: it is recomputed
+/// from stock_movements on every change, never incremented in place. This is
+/// ADR-009's ledger principle — the movements are the truth, the column is a
+/// cache of them, and integrity.sh checks the two agree.
+model StockItem {
+  id             String  @id @default(uuid()) @db.Uuid
+  organisationId String  @map("organisation_id") @db.Uuid
+  companyId      String  @map("company_id") @db.Uuid
+
+  sku         String  @db.VarChar(64)
+  name        String  @db.VarChar(255)
+  description String?
+  unit        String  @default("unit") @db.VarChar(20)
+
+  /// Default price used when adding this item to a document. Money is always
+  /// NUMERIC(19,4); never a float.
+  unitPrice Decimal @default(0) @map("unit_price") @db.Decimal(19, 4)
+
+  /// Recomputed from stock_movements. Never incremented directly.
+  quantityOnHand Decimal @default(0) @map("quantity_on_hand") @db.Decimal(19, 4)
+  /// Flags the item as low in the UI. Does not block a sale on its own.
+  reorderLevel   Decimal @default(0) @map("reorder_level") @db.Decimal(19, 4)
+
+  /// When false the item is sold without a stock check — services, or goods
+  /// bought to order. Deduction is skipped entirely.
+  tracksStock Boolean @default(true) @map("tracks_stock")
+  isArchived  Boolean @default(false) @map("is_archived")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  company      Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  movements    StockMovement[]
+  invoiceItems InvoiceItem[]
+
+  /// SKUs identify an item within its company; two companies may reuse one.
+  @@unique([companyId, sku])
+  @@index([organisationId, companyId])
+  @@index([organisationId, companyId, isArchived])
+  @@map("stock_items")
+}
+
+/// One stock change. Append-only: corrections are new rows, never edits, so
+/// the history of how a quantity was reached stays auditable.
+model StockMovement {
+  id             String            @id @default(uuid()) @db.Uuid
+  organisationId String            @map("organisation_id") @db.Uuid
+  companyId      String            @map("company_id") @db.Uuid
+  stockItemId    String            @map("stock_item_id") @db.Uuid
+  movementType   StockMovementType @map("movement_type")
+
+  /// Always positive. Direction is carried by movementType, so a signed
+  /// quantity cannot disagree with the type it is stored against.
+  quantity Decimal @db.Decimal(19, 4)
+
+  /// The invoice that caused this movement, when it came from a sale.
+  invoiceId String? @map("invoice_id") @db.Uuid
+  reason    String? @db.VarChar(255)
+
+  createdBy String?  @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  stockItem    StockItem    @relation(fields: [stockItemId], references: [id], onDelete: Restrict)
+  invoice      Invoice?     @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  @@index([organisationId, companyId])
+  @@index([stockItemId])
+  @@index([invoiceId])
+  @@map("stock_movements")
 }
 
 model Notification {

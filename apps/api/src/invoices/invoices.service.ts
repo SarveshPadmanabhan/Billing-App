@@ -18,6 +18,7 @@ import {
 } from '@billing/types';
 import { AuditService } from '../common/audit/audit.service.js';
 import { PdfService } from '../documents/pdf.service.js';
+import { deductForInvoice, restoreForInvoice } from '../stock/stock-deduction.js';
 import { notFound, conflict, validationFailed, forbidden } from '../common/errors/app-error.js';
 import type { AuditMeta } from '../customers/customers.service.js';
 
@@ -490,6 +491,11 @@ export class InvoicesService {
           );
         }
 
+        // Commit the goods before issuing the document. Inside the same
+        // transaction, so an insufficient-stock failure rolls the send back
+        // rather than leaving an issued invoice for stock nobody has.
+        await deductForInvoice(tx, org.organisationId, org.companyId, invoiceId, meta.userId);
+
         await this.pdf.generate(org, 'invoices', invoiceId, { userId: meta.userId, tx });
 
         const invoice = await tx.invoice.update({
@@ -571,6 +577,11 @@ export class InvoicesService {
             `Invoice ${existing.invoiceNumber} has recorded payments; void them before cancelling`,
           );
         }
+
+        // Goods committed by this invoice go back on the shelf. Recorded as
+        // new IN movements, never by deleting the OUT rows — the movement
+        // ledger is append-only and the round trip is what an auditor reads.
+        await restoreForInvoice(tx, org.organisationId, org.companyId, invoiceId, meta.userId);
 
         const invoice = await tx.invoice.update({
           where: { id: invoiceId },

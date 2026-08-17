@@ -24,6 +24,8 @@ export const PERMISSIONS = [
   'quotation:convert',
   'invoice:view',
   'invoice:write',
+  'stock:view',
+  'stock:write',
   'invoice:send',
   'invoice:cancel',
   'payment:view',
@@ -56,6 +58,8 @@ const MATRIX: Record<OrganisationRole, ReadonlySet<Permission>> = {
   OWNER: new Set(PERMISSIONS),
 
   ADMIN: new Set<Permission>([
+    'stock:view',
+    'stock:write',
     'dashboard:view',
     'customer:view',
     'customer:write',
@@ -80,6 +84,8 @@ const MATRIX: Record<OrganisationRole, ReadonlySet<Permission>> = {
   ]),
 
   BILLING: new Set<Permission>([
+    'stock:view',
+    'stock:write', // Stock drives what can be invoiced.
     'dashboard:view',
     'customer:view',
     'customer:write',
@@ -109,6 +115,7 @@ const MATRIX: Record<OrganisationRole, ReadonlySet<Permission>> = {
   ]),
 
   SALES: new Set<Permission>([
+    'stock:view',
     'dashboard:view',
     'customer:view',
     'customer:write',
@@ -121,6 +128,7 @@ const MATRIX: Record<OrganisationRole, ReadonlySet<Permission>> = {
   ]),
 
   VIEWER: new Set<Permission>([
+    'stock:view',
     'dashboard:view',
     'customer:view',
     'quotation:view',

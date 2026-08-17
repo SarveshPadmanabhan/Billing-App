@@ -204,6 +204,47 @@ expect_zero "$(count_all "
 # table only sees organisations that HAVE a default, so an organisation with
 # zero defaults produces no group and vanishes from the result — the check
 # would pass precisely in the case it exists to catch.
+# --- Stock ---------------------------------------------------------------------------
+echo "5. Stock"
+
+# The ledger is the truth; quantity_on_hand is a cache of it. Any disagreement
+# means something incremented the column instead of recomputing it.
+expect_zero "$(count_all "
+  SELECT count(*) FROM stock_items si
+  WHERE si.quantity_on_hand <> (
+    SELECT COALESCE(SUM(CASE sm.movement_type
+                          WHEN 'IN'         THEN sm.quantity
+                          WHEN 'ADJUSTMENT' THEN sm.quantity
+                          ELSE -sm.quantity END), 0)
+      FROM stock_movements sm WHERE sm.stock_item_id = si.id);")" \
+  "quantity_on_hand matches the movement ledger"
+
+# Negative stock means a deduction escaped the availability check.
+expect_zero "$(count_all "
+  SELECT count(*) FROM stock_items WHERE tracks_stock AND quantity_on_hand < 0;")" \
+  "No tracked item holds a negative quantity"
+
+# Movement quantities are always positive; direction lives in movement_type.
+expect_zero "$(count_all "
+  SELECT count(*) FROM stock_movements WHERE quantity <= 0;")" \
+  "No movement has a zero or negative quantity"
+
+# One OUT per item per invoice. A second would mean a retried send deducted twice.
+expect_zero "$(count_all "
+  SELECT count(*) FROM (
+    SELECT invoice_id, stock_item_id FROM stock_movements
+     WHERE invoice_id IS NOT NULL AND movement_type = 'OUT'
+     GROUP BY 1,2 HAVING count(*) > 1) x;")" \
+  "No invoice deducted the same item twice"
+
+# A movement must never cross into another organisation's item or company.
+expect_zero "$(count_all "
+  SELECT count(*) FROM stock_movements sm
+  JOIN stock_items si ON si.id = sm.stock_item_id
+  WHERE si.organisation_id <> sm.organisation_id OR si.company_id <> sm.company_id;")" \
+  "No movement crosses an organisation or company boundary"
+echo
+
 expect_zero "$(count_all "
   SELECT count(*) FROM organisations o
   WHERE (SELECT count(*) FROM companies c

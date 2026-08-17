@@ -7,6 +7,8 @@ import { HealthController } from './health/health.controller.js';
 import { AuthController } from './auth/auth.controller.js';
 import { OrganisationsController } from './organisations/organisations.controller.js';
 import { CompaniesController } from './companies/companies.controller.js';
+import { StockController } from './stock/stock.controller.js';
+import { StockService } from './stock/stock.service.js';
 import { CustomersController } from './customers/customers.controller.js';
 import { CustomersService } from './customers/customers.service.js';
 import { QuotationsController } from './quotations/quotations.controller.js';
@@ -43,6 +45,7 @@ const env = loadServerEnv();
     AuthController,
     OrganisationsController,
     CompaniesController,
+    StockController,
     CustomersController,
     QuotationsController,
     InvoicesController,
@@ -56,6 +59,7 @@ const env = loadServerEnv();
       useValue: createLogger(env.LOG_LEVEL, env.NODE_ENV === 'development'),
     },
     AuditService,
+    StockService,
     CustomersService,
     QuotationsService,
     InvoicesService,
