@@ -8,6 +8,8 @@ import { AuthController } from './auth/auth.controller.js';
 import { OrganisationsController } from './organisations/organisations.controller.js';
 import { CompaniesController } from './companies/companies.controller.js';
 import { StockController } from './stock/stock.controller.js';
+import { ReportsController } from './reports/reports.controller.js';
+import { ReportsService } from './reports/reports.service.js';
 import { StockService } from './stock/stock.service.js';
 import { CustomersController } from './customers/customers.controller.js';
 import { CustomersService } from './customers/customers.service.js';
@@ -46,6 +48,7 @@ const env = loadServerEnv();
     OrganisationsController,
     CompaniesController,
     StockController,
+    ReportsController,
     CustomersController,
     QuotationsController,
     InvoicesController,
@@ -60,6 +63,7 @@ const env = loadServerEnv();
     },
     AuditService,
     StockService,
+    ReportsService,
     CustomersService,
     QuotationsService,
     InvoicesService,

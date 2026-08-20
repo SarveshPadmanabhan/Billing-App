@@ -1,4 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import {
+  LIVE_INVOICE_STATUSES,
+  COLLECTABLE_STATUSES,
+  todayUtc,
+} from '../common/finance/invoice-status.js';
 import { withTenant, Prisma, type TenantClient } from '@billing/database';
 import type { OrganisationContext } from '@billing/types';
 
@@ -72,19 +77,10 @@ export interface DashboardRecent {
   }>;
 }
 
-/** Statuses representing money that has been billed and is collectable. */
-const LIVE_INVOICE_STATUSES = ['SENT', 'PARTIALLY_PAID', 'PAID', 'OVERDUE'] as const;
-const COLLECTABLE_STATUSES = ['SENT', 'PARTIALLY_PAID', 'OVERDUE'] as const;
-
 const CUSTOMER_SELECT = { id: true, companyName: true, contactName: true } as const;
 
 const zero = new Prisma.Decimal(0);
 const money = (value: Prisma.Decimal | null | undefined) => (value ?? zero).toFixed(4);
-
-function todayUtc(): Date {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-}
 
 @Injectable()
 export class DashboardService {
