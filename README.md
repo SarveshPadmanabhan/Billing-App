@@ -161,6 +161,22 @@ secret values. In production these come from a secret manager, never a file.
 > if manual exploration has cluttered them. It only touches those two
 > organisations and refuses to run in production.
 
+### Preparing a handover or a fresh environment
+
+`./scripts/reset-database.sh` drops the database and rebuilds it empty from the
+migrations. Use it before handing the system to someone else: development
+databases accumulate test organisations, seeded demo accounts with known
+passwords, and invented invoices that are indistinguishable from real records
+once a client starts working.
+
+It takes a backup first and prints the restore command, shows what is about to
+be destroyed, requires the database name typed back (or `--yes`), and refuses
+to run with `NODE_ENV=production` or against a database whose name looks like
+production.
+
+Do **not** run `pnpm db:seed` afterwards on a database you are handing over —
+that creates the demo accounts, whose passwords are in this README.
+
 ### 4. Install, migrate, seed
 
 ```bash
