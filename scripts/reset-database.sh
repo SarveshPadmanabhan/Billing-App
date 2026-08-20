@@ -16,7 +16,21 @@
 
 set -euo pipefail
 
-export PATH="/opt/homebrew/opt/postgresql@16/bin:$PATH"
+# Locate psql. Homebrew does not put versioned Postgres on PATH; Linux and
+# Windows (Git Bash) normally do. Only prepend a path that actually exists, so
+# this works unchanged on macOS, Linux and Git Bash / WSL.
+for CANDIDATE in \
+  /opt/homebrew/opt/postgresql@16/bin \
+  /usr/local/opt/postgresql@16/bin \
+  /usr/lib/postgresql/16/bin \
+  "/c/Program Files/PostgreSQL/16/bin"; do
+  [ -d "$CANDIDATE" ] && export PATH="$CANDIDATE:$PATH" && break
+done
+
+if ! command -v psql >/dev/null 2>&1; then
+  echo "psql not found. Install PostgreSQL 16 and ensure psql is on PATH." >&2
+  exit 1
+fi
 
 DB_NAME="${DB_NAME:-billing_dev}"
 DB_HOST="${DB_HOST:-localhost}"
