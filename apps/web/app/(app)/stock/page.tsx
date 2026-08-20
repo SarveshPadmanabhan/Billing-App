@@ -99,7 +99,7 @@ export default function StockPage() {
             <Input
               id="stock-search"
               value={search}
-              placeholder="Name or SKU"
+              placeholder="Name or category"
               onChange={(e) => setSearch(e.target.value)}
             />
           </Field>
@@ -147,17 +147,16 @@ export default function StockPage() {
               <caption className="sr-only">Stock items</caption>
               <thead>
                 <tr className="border-b border-border bg-canvas">
+                  {/* Labelled "Category" but still backed by the `sku` field —
+                      a display rename, not a schema change. */}
                   <th scope="col" className="p-4 text-left text-body-sm font-semibold text-ink-secondary">
-                    SKU
+                    Category
                   </th>
                   <th scope="col" className="p-4 text-left text-body-sm font-semibold text-ink-secondary">
                     Item
                   </th>
                   <th scope="col" className="p-4 text-right text-body-sm font-semibold text-ink-secondary">
                     In stock
-                  </th>
-                  <th scope="col" className="p-4 text-right text-body-sm font-semibold text-ink-secondary">
-                    Reorder at
                   </th>
                   <th scope="col" className="p-4 text-right text-body-sm font-semibold text-ink-secondary">
                     Unit price
@@ -191,9 +190,6 @@ export default function StockPage() {
                           aria-label="Low stock"
                         />
                       )}
-                    </td>
-                    <td className="p-4 text-right text-body text-ink-muted">
-                      {qty(item.reorderLevel)}
                     </td>
                     <td className="p-4 text-right text-body text-ink-secondary">
                       <Money amount={item.unitPrice} />

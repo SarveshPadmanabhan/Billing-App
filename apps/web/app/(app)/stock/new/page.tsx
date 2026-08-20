@@ -18,7 +18,6 @@ interface ItemForm {
   unit: string;
   unitPrice: string;
   openingQuantity: string;
-  reorderLevel: string;
   tracksStock: boolean;
 }
 
@@ -29,7 +28,6 @@ const EMPTY: ItemForm = {
   unit: 'unit',
   unitPrice: '0',
   openingQuantity: '0',
-  reorderLevel: '0',
   tracksStock: true,
 };
 
@@ -59,9 +57,9 @@ export default function NewStockItemPage() {
 
   function validate(): boolean {
     const next: Record<string, string> = {};
-    if (!values.sku.trim()) next.sku = 'SKU is required';
+    if (!values.sku.trim()) next.sku = 'Category is required';
     if (!values.name.trim()) next.name = 'Name is required';
-    for (const field of ['unitPrice', 'openingQuantity', 'reorderLevel'] as const) {
+    for (const field of ['unitPrice', 'openingQuantity'] as const) {
       if (!DECIMAL.test(values[field].trim())) {
         next[field] = 'Enter a number with up to 4 decimal places';
       }
@@ -87,7 +85,10 @@ export default function NewStockItemPage() {
           unit: values.unit.trim() || 'unit',
           unitPrice: values.unitPrice.trim(),
           openingQuantity: values.openingQuantity.trim(),
-          reorderLevel: values.reorderLevel.trim(),
+          // Reorder level is no longer set here. The API defaults it to 0, and
+          // items created before this still keep the value they were given —
+          // which is what the low-stock highlighting reads.
+          reorderLevel: '0',
           tracksStock: values.tracksStock,
         },
       });
@@ -130,7 +131,8 @@ export default function NewStockItemPage() {
         <h2 className="text-h4 text-ink">Item</h2>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="SKU" htmlFor="sku" required error={errors.sku}>
+          {/* Labelled "Category"; still stored as `sku`. */}
+          <Field label="Category" htmlFor="sku" required error={errors.sku}>
             <Input
               id="sku"
               value={values.sku}
@@ -165,7 +167,7 @@ export default function NewStockItemPage() {
       <Card className="flex flex-col gap-4">
         <h2 className="text-h4 text-ink">Quantity and price</h2>
 
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Unit price" htmlFor="unitPrice" error={errors.unitPrice}>
             <Input
               id="unitPrice"
@@ -189,21 +191,6 @@ export default function NewStockItemPage() {
               value={values.openingQuantity}
               invalid={Boolean(errors.openingQuantity)}
               onChange={(e) => setField('openingQuantity', e.target.value)}
-            />
-          </Field>
-          <Field
-            label="Reorder level"
-            htmlFor="reorderLevel"
-            error={errors.reorderLevel}
-            hint="Flags the item as low"
-          >
-            <Input
-              id="reorderLevel"
-              inputMode="decimal"
-              className="tabular text-right"
-              value={values.reorderLevel}
-              invalid={Boolean(errors.reorderLevel)}
-              onChange={(e) => setField('reorderLevel', e.target.value)}
             />
           </Field>
         </div>
