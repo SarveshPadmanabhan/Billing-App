@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { X } from 'lucide-react';
 import type { CurrentUserResponse } from '@billing/types';
 import { apiFetch, ApiRequestError } from '../../lib/api-client';
+import { authClient } from '../../lib/auth-client';
 import { Sidebar } from '../../components/layout/sidebar';
 import { Topbar } from '../../components/layout/topbar';
 
@@ -31,8 +32,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const needsOnboarding = Boolean(data) && !data?.organisation;
 
   useEffect(() => {
-    if (unauthenticated) router.replace('/login');
-    else if (needsOnboarding) router.replace('/onboarding');
+    if (unauthenticated) {
+      // Clear the cookie before redirecting. The middleware only checks that a
+      // session cookie EXISTS, never that it is valid — so a stale one (after a
+      // database reset, or an expired session) sends /login straight back to
+      // /dashboard, which 401s again. That loop renders nothing at all, which
+      // is the blank page this guards against.
+      void authClient
+        .signOut()
+        .catch(() => {
+          // Signing out server-side is best-effort: the session may already be
+          // gone. Removing the cookie locally is what breaks the loop.
+          document.cookie =
+            'better-auth.session_token=; Max-Age=0; path=/; SameSite=Lax';
+        })
+        .finally(() => router.replace('/login'));
+    } else if (needsOnboarding) {
+      router.replace('/onboarding');
+    }
   }, [unauthenticated, needsOnboarding, router]);
 
   if (isLoading) {
@@ -46,8 +63,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   if (error) {
-    // The effect above handles the redirect; render nothing meanwhile.
-    if (unauthenticated) return null;
+    // The effect above signs out and redirects. Show something meanwhile —
+    // returning null here is what made a failed redirect look like a broken
+    // app rather than a session that had expired.
+    if (unauthenticated) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-canvas">
+          <p className="text-body text-ink-muted" role="status">
+            Session expired — taking you to sign in…
+          </p>
+        </div>
+      );
+    }
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-canvas px-4">
         <p className="text-body text-ink">Something went wrong.</p>
