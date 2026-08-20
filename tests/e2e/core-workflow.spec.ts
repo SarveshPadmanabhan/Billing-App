@@ -90,8 +90,10 @@ test.describe('core MVP workflow', () => {
     // Customer is a searchable combobox, not a native select. Wait for the
     // field to be enabled — it is disabled while the customer list loads, so
     // clicking earlier would open an empty menu.
+    // The customer combobox only suggests once something is typed, so search
+    // for the customer this suite created rather than opening a full list.
     await page.waitForSelector('#customerId:not([disabled])');
-    await page.click('#customerId');
+    await page.fill('#customerId', 'Journey Customer Ltd');
     await page.locator('[role="option"]').first().click();
     await page.fill('input[aria-label="Description for line 1"]', LINE.description);
     await page.fill('input[aria-label="Quantity for line 1"]', String(LINE.qty));

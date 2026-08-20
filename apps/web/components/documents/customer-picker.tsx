@@ -90,8 +90,11 @@ export function CustomerPicker({
   }, [open]);
 
   const term = search.trim().toLowerCase();
+  // Suggestions require a search term. An empty field lists nothing: the menu
+  // would otherwise cover the fields below the moment this one takes focus,
+  // including when tabbing through the form.
   const matches = !term
-    ? customers
+    ? []
     : customers.filter((c) => {
         const haystack = [customerName(c), c.email ?? '', c.phone ?? ''].join(' ').toLowerCase();
         return haystack.includes(term);
@@ -118,10 +121,6 @@ export function CustomerPicker({
         aria-controls={`${id}-options`}
         aria-autocomplete="list"
         placeholder={loading ? 'Loading customers…' : 'Search or select a customer'}
-        onFocus={() => {
-          setOpen(true);
-          setHighlight(0);
-        }}
         onChange={(e) => {
           setSearch(e.target.value);
           setOpen(true);
@@ -152,7 +151,9 @@ export function CustomerPicker({
         }}
       />
 
+      {/* Requires a term: without it an empty field would render an empty box. */}
       {open &&
+        term.length > 0 &&
         position &&
         typeof document !== 'undefined' &&
         createPortal(
@@ -171,7 +172,7 @@ export function CustomerPicker({
             {matches.length === 0 ? (
               <li className="px-3 py-2 text-caption text-ink-muted">
                 {customers.length === 0
-                  ? 'No customers yet — add one first.'
+                  ? 'No customers yet — add one before creating this document.'
                   : `No customer matches "${search.trim()}".`}
               </li>
             ) : (
