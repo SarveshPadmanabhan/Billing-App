@@ -87,8 +87,12 @@ test.describe('core MVP workflow', () => {
 
     // --- 4. Create a quotation (TICKET-016, TICKET-017) ---------------------
     await page.goto('/quotations/new');
-    await page.waitForSelector('#customerId');
-    await page.selectOption('#customerId', { index: 1 });
+    // Customer is a searchable combobox, not a native select. Wait for the
+    // field to be enabled — it is disabled while the customer list loads, so
+    // clicking earlier would open an empty menu.
+    await page.waitForSelector('#customerId:not([disabled])');
+    await page.click('#customerId');
+    await page.locator('[role="option"]').first().click();
     await page.fill('input[aria-label="Description for line 1"]', LINE.description);
     await page.fill('input[aria-label="Quantity for line 1"]', String(LINE.qty));
     await page.fill('input[aria-label="Unit price for line 1"]', String(LINE.rate));

@@ -206,8 +206,12 @@ test.describe('smoke', () => {
     await signInToScratchOrg(page);
 
     await page.goto('/quotations/new');
-    await page.waitForSelector('#customerId');
-    await page.selectOption('#customerId', { index: 1 });
+    // Customer is a searchable combobox, not a native select. Wait for the
+    // field to be enabled — it is disabled while the customer list loads, so
+    // clicking earlier would open an empty menu.
+    await page.waitForSelector('#customerId:not([disabled])');
+    await page.click('#customerId');
+    await page.locator('[role="option"]').first().click();
 
     await page.fill('input[aria-label="Description for line 1"]', 'E2E service');
     await page.fill('input[aria-label="Quantity for line 1"]', '3');
@@ -244,8 +248,12 @@ test.describe('smoke', () => {
     await signInToScratchOrg(page);
 
     await page.goto('/invoices/new');
-    await page.waitForSelector('#customerId');
-    await page.selectOption('#customerId', { index: 1 });
+    // Customer is a searchable combobox, not a native select. Wait for the
+    // field to be enabled — it is disabled while the customer list loads, so
+    // clicking earlier would open an empty menu.
+    await page.waitForSelector('#customerId:not([disabled])');
+    await page.click('#customerId');
+    await page.locator('[role="option"]').first().click();
 
     await page.fill('input[aria-label="Description for line 1"]', 'E2E invoice line');
     await page.fill('input[aria-label="Quantity for line 1"]', '2');

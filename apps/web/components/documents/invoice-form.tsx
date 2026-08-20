@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ApiRequestError } from '../../lib/api-client';
-import { listCustomers, customerName } from '../../lib/customers';
+import { listCustomers } from '../../lib/customers';
+import { CustomerPicker } from './customer-picker';
 import type { InvoiceFormValues } from '../../lib/invoices';
 import { Button, Card, Field, Input, Textarea, Select } from '../ui/primitives';
 import { LineItemsEditor, TotalsSummary } from './line-items-editor';
@@ -107,19 +108,14 @@ export function InvoiceForm({
         <h2 className="text-h4 text-ink">Customer and dates</h2>
 
         <Field label="Customer" htmlFor="customerId" error={errors.customerId} required>
-          <Select
+          <CustomerPicker
             id="customerId"
+            customers={customers?.items ?? []}
+            loading={customersLoading}
             value={values.customerId}
-            disabled={customersLoading}
-            onChange={(e) => set('customerId', e.target.value)}
-          >
-            <option value="">{customersLoading ? 'Loading customers…' : 'Select a customer'}</option>
-            {customers?.items.map((customer) => (
-              <option key={customer.id} value={customer.id}>
-                {customerName(customer)}
-              </option>
-            ))}
-          </Select>
+            invalid={Boolean(errors.customerId)}
+            onChange={(customerId) => set('customerId', customerId)}
+          />
         </Field>
 
         {customers && customers.items.length === 0 && (
