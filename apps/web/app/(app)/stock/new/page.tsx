@@ -85,10 +85,9 @@ export default function NewStockItemPage() {
           unit: values.unit.trim() || 'unit',
           unitPrice: values.unitPrice.trim(),
           openingQuantity: values.openingQuantity.trim(),
-          // Reorder level is no longer set here. The API defaults it to 0, and
-          // items created before this still keep the value they were given —
-          // which is what the low-stock highlighting reads.
-          reorderLevel: '0',
+          // reorderLevel is deliberately not sent: the form does not collect
+          // it, so the server default (25) applies. Sending '0' here would
+          // override that default with a value nobody chose.
           tracksStock: values.tracksStock,
         },
       });

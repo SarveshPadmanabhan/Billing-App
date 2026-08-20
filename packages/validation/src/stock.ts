@@ -31,7 +31,8 @@ export const createStockItemSchema = z.object({
   unitPrice: decimalString('Unit price').default('0'),
   /** Opening balance. Recorded as an IN movement, not written to the column. */
   openingQuantity: decimalString('Opening quantity').default('0'),
-  reorderLevel: decimalString('Reorder level').default('0'),
+  /** Defaults to 25; the form no longer collects it. See schema.prisma. */
+  reorderLevel: decimalString('Reorder level').default('25'),
   tracksStock: z.boolean().default(true),
 });
 

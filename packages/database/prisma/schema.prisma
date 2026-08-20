@@ -744,7 +744,10 @@ model StockItem {
   /// Recomputed from stock_movements. Never incremented directly.
   quantityOnHand Decimal @default(0) @map("quantity_on_hand") @db.Decimal(19, 4)
   /// Flags the item as low in the UI. Does not block a sale on its own.
-  reorderLevel   Decimal @default(0) @map("reorder_level") @db.Decimal(19, 4)
+  /// Defaults to 25: the item form no longer collects it, so this is the
+  /// threshold every item gets. At 0 an item would only read as "low" once it
+  /// was already out of stock, which is a warning that arrives too late.
+  reorderLevel   Decimal @default(25) @map("reorder_level") @db.Decimal(19, 4)
 
   /// When false the item is sold without a stock check — services, or goods
   /// bought to order. Deduction is skipped entirely.
