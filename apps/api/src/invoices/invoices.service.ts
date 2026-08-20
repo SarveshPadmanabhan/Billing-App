@@ -36,6 +36,7 @@ const INVOICE_SELECT = {
   id: true,
   organisationId: true,
   customerId: true,
+  paymentMethod: true,
   quotationId: true,
   invoiceNumber: true,
   issueDate: true,
@@ -256,6 +257,7 @@ export class InvoicesService {
             organisationId: org.organisationId,
             companyId: org.companyId,
             customerId: customer.id,
+            paymentMethod: input.paymentMethod,
             invoiceNumber: number.formatted,
             issueDate,
             dueDate,
@@ -402,6 +404,7 @@ export class InvoicesService {
           where: { id: invoiceId },
           data: {
             ...(input.customerId && { customerId: input.customerId }),
+            ...(input.paymentMethod !== undefined && { paymentMethod: input.paymentMethod }),
             issueDate,
             dueDate,
             ...(input.notes !== undefined && { notes: input.notes }),
@@ -418,6 +421,7 @@ export class InvoicesService {
                 deleteMany: {},
                 create: totals.items.map((item) => ({
                   position: item.position,
+                  stockItemId: item.stockItemId,
                   description: item.description,
                   quantity: item.quantity,
                   unit: item.unit,

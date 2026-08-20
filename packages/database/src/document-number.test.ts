@@ -31,8 +31,13 @@ const prisma = new PrismaClient({ datasources: { db: { url: url.toString() } } }
  *
  * Seeds to the highest number already used rather than to 0: these
  * organisations hold real documents created by other suites, and restarting
- * from 1 would collide with the (organisation_id, invoice_number) unique
- * index — a test-isolation failure that looks like a numbering bug.
+ * from 1 would collide with the (company_id, invoice_number) unique index —
+ * a test-isolation failure that looks like a numbering bug.
+ *
+ * Derived from the maximum number actually issued, NOT from a row count. The
+ * two agree only while numbering is gapless; delete any document and the count
+ * falls behind the highest number, so the next mint reuses one that already
+ * exists. That is exactly what happened once cleanup removed two invoices.
  */
 async function resetSequence(
   organisationId: string,
@@ -44,10 +49,20 @@ async function resetSequence(
   await withTenant(
     organisationId,
     async (tx) => {
-      const used =
+      // Parse the numeric tail of the highest number issued for this company.
+      // Prefixes vary per company, so the digits are extracted rather than
+      // assuming a fixed width.
+      const rows =
         documentType === 'INVOICE'
-          ? await tx.invoice.count({ where: { organisationId, companyId } })
-          : await tx.quotation.count({ where: { organisationId, companyId } });
+          ? await tx.$queryRaw<Array<{ used: bigint | null }>>`
+              SELECT MAX(NULLIF(regexp_replace(invoice_number, '\\D', '', 'g'), '')::bigint) AS used
+                FROM invoices WHERE company_id = ${companyId}::uuid
+            `
+          : await tx.$queryRaw<Array<{ used: bigint | null }>>`
+              SELECT MAX(NULLIF(regexp_replace(quotation_number, '\\D', '', 'g'), '')::bigint) AS used
+                FROM quotations WHERE company_id = ${companyId}::uuid
+            `;
+      const used = Number(rows[0]?.used ?? 0n);
 
       await tx.$executeRaw`
         UPDATE document_sequences SET current_number = ${used}::bigint

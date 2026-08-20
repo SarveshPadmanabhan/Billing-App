@@ -686,7 +686,13 @@ export class QuotationsService {
   async convertToInvoice(
     org: OrganisationContext,
     quotationId: string,
-    input: { issueDate?: string; dueDate?: string; notes?: string | null; terms?: string | null },
+    input: {
+      paymentMethod?: 'CASH' | 'BANK_TRANSFER' | 'CARD' | 'CHEQUE' | 'UPI' | 'OTHER' | null;
+      issueDate?: string;
+      dueDate?: string;
+      notes?: string | null;
+      terms?: string | null;
+    },
     meta: AuditMeta,
   ) {
     return withTenant(
@@ -776,6 +782,7 @@ export class QuotationsService {
             organisationId: org.organisationId,
             companyId: org.companyId,
             customerId: quotation.customerId,
+            paymentMethod: input.paymentMethod ?? null,
             quotationId: quotation.id, // Preserves the source relationship.
             invoiceNumber: number.formatted,
             issueDate,

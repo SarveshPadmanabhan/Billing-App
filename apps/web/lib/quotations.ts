@@ -161,11 +161,16 @@ export const cancelQuotation = (id: string, reason?: string) =>
 export const duplicateQuotation = (id: string) =>
   apiFetch<QuotationDetail>(`/quotations/${id}/duplicate`, { method: 'POST' });
 
-export const convertQuotation = (id: string) =>
+export const convertQuotation = (id: string, paymentMethod?: string) =>
   apiFetch<{
     invoice: { id: string; invoiceNumber: string; status: string; totalAmount: string };
     alreadyConverted: boolean;
-  }>(`/quotations/${id}/convert-to-invoice`, { method: 'POST', json: {} });
+  }>(`/quotations/${id}/convert-to-invoice`, {
+    method: 'POST',
+    // Omitted rather than sent empty: the field is optional on conversion and
+    // "" is not a valid enum value.
+    json: paymentMethod ? { paymentMethod } : {},
+  });
 
 export const getQuotationPdfUrl = (id: string) =>
   apiFetch<{ url: string; fileName: string; expiresInSeconds: number }>(`/quotations/${id}/pdf`);

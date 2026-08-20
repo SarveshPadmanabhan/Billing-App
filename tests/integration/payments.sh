@@ -56,7 +56,7 @@ sent_invoice() {
   local jar="$1" customer="$2" price="$3" desc="${4:-Payable item}"
   local id
   id=$(curl -s -m 15 -b "$jar" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
-    -d "{\"customerId\":\"$customer\",\"issueDate\":\"$TODAY\",
+    -d "{\"customerId\":\"$customer\",\"paymentMethod\":\"BANK_TRANSFER\",\"issueDate\":\"$TODAY\",
          \"items\":[{\"description\":\"$desc\",\"quantity\":\"1\",\"unitPrice\":\"$price\",\"taxRate\":\"0\"}]}" \
     | jqp "['data']['id']")
   curl -s -m 60 -b "$jar" -X POST "$BASE/invoices/$id/send" -o /dev/null
@@ -120,7 +120,7 @@ check "VALIDATION_ERROR" "$(printf '%s' "$NOKEY" | jqp "['error']['code']")" "Mi
 
 # A draft invoice cannot receive payment — it was never issued.
 DRAFT=$(curl -s -m 15 -b "$A_JAR" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
-  -d "{\"customerId\":\"$A_CUST\",\"issueDate\":\"$TODAY\",\"items\":[{\"description\":\"Draft\",\"quantity\":\"1\",\"unitPrice\":\"100\"}]}" \
+  -d "{\"customerId\":\"$A_CUST\",\"paymentMethod\":\"BANK_TRANSFER\",\"issueDate\":\"$TODAY\",\"items\":[{\"description\":\"Draft\",\"quantity\":\"1\",\"unitPrice\":\"100\"}]}" \
   | jqp "['data']['id']")
 check "INVALID_STATUS_TRANSITION" "$(pay "$A_JAR" "$DRAFT" "50" "key-draft-$STAMP" | jqp "['error']['code']")" \
   "Cannot pay a DRAFT invoice"

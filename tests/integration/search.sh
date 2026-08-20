@@ -64,15 +64,15 @@ done
 
 # Documents spread across dates and customers so filters have something to bite on.
 QUOTE_ZEP=$(curl -s -m 15 -b "$A_JAR" -X POST "$BASE/quotations" -H 'Content-Type: application/json' \
-  -d "{\"customerId\":\"$CUST_ZEP\",\"issueDate\":\"2026-03-10\",
+  -d "{\"customerId\":\"$CUST_ZEP\",\"paymentMethod\":\"BANK_TRANSFER\",\"issueDate\":\"2026-03-10\",
        \"items\":[{\"description\":\"Design sprint\",\"quantity\":\"1\",\"unitPrice\":\"90000\",\"taxRate\":\"18\"}]}" \
   | jqp "['data']['id']")
 INV_ZEP=$(curl -s -m 15 -b "$A_JAR" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
-  -d "{\"customerId\":\"$CUST_ZEP\",\"issueDate\":\"2026-03-15\",\"dueDate\":\"2026-04-14\",
+  -d "{\"customerId\":\"$CUST_ZEP\",\"paymentMethod\":\"BANK_TRANSFER\",\"issueDate\":\"2026-03-15\",\"dueDate\":\"2026-04-14\",
        \"items\":[{\"description\":\"Build phase\",\"quantity\":\"1\",\"unitPrice\":\"250000\",\"taxRate\":\"18\"}]}" \
   | jqp "['data']['id']")
 INV_ORB=$(curl -s -m 15 -b "$A_JAR" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
-  -d "{\"customerId\":\"$CUST_ORB\",\"issueDate\":\"2026-07-01\",\"dueDate\":\"2026-07-31\",
+  -d "{\"customerId\":\"$CUST_ORB\",\"paymentMethod\":\"BANK_TRANSFER\",\"issueDate\":\"2026-07-01\",\"dueDate\":\"2026-07-31\",
        \"items\":[{\"description\":\"Logistics retainer\",\"quantity\":\"1\",\"unitPrice\":\"60000\",\"taxRate\":\"18\"}]}" \
   | jqp "['data']['id']")
 curl -s -m 60 -b "$A_JAR" -X POST "$BASE/invoices/$INV_ORB/send" -o /dev/null

@@ -540,6 +540,11 @@ model Invoice {
   issueDate      DateTime      @map("issue_date") @db.Date
   dueDate        DateTime      @map("due_date") @db.Date
   status         InvoiceStatus @default(DRAFT)
+
+  /// How this invoice is to be paid. Reuses the payments enum so expected
+  /// and actual method are comparable. Nullable: invoices predating the field
+  /// have no answer and inventing one would fabricate a financial detail.
+  paymentMethod   PaymentMethod? @map("payment_method")
   currencyCode   String        @map("currency_code") @db.Char(3)
 
   subtotal       Decimal @default(0) @db.Decimal(19, 4)

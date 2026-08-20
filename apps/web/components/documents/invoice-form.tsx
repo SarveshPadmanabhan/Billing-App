@@ -16,6 +16,16 @@ import { LineItemsEditor, TotalsSummary } from './line-items-editor';
  * structure and totals, and matching layouts mean a user who has learned one
  * already knows the other. The differences are the due date and the wording.
  */
+/** Mirrors the PaymentMethod enum; labels are what a user would say. */
+const PAYMENT_METHOD_OPTIONS = [
+  ['CASH', 'Cash'],
+  ['BANK_TRANSFER', 'Bank transfer'],
+  ['CARD', 'Card'],
+  ['CHEQUE', 'Cheque'],
+  ['UPI', 'UPI'],
+  ['OTHER', 'Other'],
+] as const;
+
 export function InvoiceForm({
   initialValues,
   currency,
@@ -48,6 +58,8 @@ export function InvoiceForm({
     const next: Record<string, string> = {};
 
     if (!values.customerId) next.customerId = 'Select a customer';
+    // Mirrors the server rule; the server rejects this independently.
+    if (!values.paymentMethod) next.paymentMethod = 'Select a mode of payment';
     if (!values.issueDate) next.issueDate = 'Invoice date is required';
     if (values.dueDate && values.dueDate < values.issueDate) {
       next.dueDate = 'Due date must be on or after the invoice date';
@@ -163,29 +175,30 @@ export function InvoiceForm({
       </Card>
 
       <Card className="flex flex-col gap-4">
-        <h2 className="text-h4 text-ink">Discount and totals</h2>
-        <div className="max-w-[220px]">
+        <h2 className="text-h4 text-ink">Mode of payment and totals</h2>
+        <div className="max-w-[260px]">
           <Field
-            label="Overall discount (%)"
-            htmlFor="discountRate"
-            error={errors['discount.rate']}
-            hint="Applied to the subtotal."
+            label="Mode of payment"
+            htmlFor="paymentMethod"
+            error={errors.paymentMethod}
+            required
+            hint="How the customer is expected to pay."
           >
-            <Input
-              id="discountRate"
-              inputMode="decimal"
-              className="tabular text-right"
-              value={values.discountRate}
-              onChange={(e) => set('discountRate', e.target.value)}
-              placeholder="0"
-            />
+            <Select
+              id="paymentMethod"
+              value={values.paymentMethod}
+              onChange={(e) => set('paymentMethod', e.target.value)}
+            >
+              <option value="">Select a mode</option>
+              {PAYMENT_METHOD_OPTIONS.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </Select>
           </Field>
         </div>
-        <TotalsSummary
-          items={values.items}
-          documentDiscountRate={values.discountRate}
-          currency={currency}
-        />
+        <TotalsSummary items={values.items} documentDiscountRate="" currency={currency} />
       </Card>
 
       <Card className="flex flex-col gap-4">

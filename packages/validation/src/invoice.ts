@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PAYMENT_METHODS } from './payment.js';
 import { uuidSchema, paginationSchema } from './schemas.js';
 import { quotationItemSchema } from './quotation.js';
 
@@ -50,6 +51,10 @@ const documentDiscountSchema = z
 export const createInvoiceSchema = z
   .object({
     customerId: uuidSchema,
+    /** Required on new invoices: how the customer is expected to pay. */
+    paymentMethod: z.enum(PAYMENT_METHODS, {
+      errorMap: () => ({ message: 'Select a mode of payment' }),
+    }),
     issueDate: dateOnly,
     /** Optional: defaults to issueDate + the organisation's payment terms. */
     dueDate: dateOnly.optional().nullable(),
@@ -71,6 +76,12 @@ export const createInvoiceSchema = z
 export const updateInvoiceSchema = z
   .object({
     customerId: uuidSchema.optional(),
+    /**
+     * Optional on update. This is a partial update, and the invoices that
+     * predate the field have none — requiring one here would block editing
+     * every historical draft over a value its author never chose.
+     */
+    paymentMethod: z.enum(PAYMENT_METHODS).optional().nullable(),
     issueDate: dateOnly.optional(),
     dueDate: dateOnly.optional().nullable(),
     items: z.array(invoiceItemSchema).min(1).max(500).optional(),

@@ -48,7 +48,7 @@ setup_org() {
 new_invoice() {
   local jar="$1" customer="$2" desc="$3" qty="$4" price="$5" due="${6:-2026-09-14}"
   curl -s -m 15 -b "$jar" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
-    -d "{\"customerId\":\"$customer\",\"issueDate\":\"2026-08-14\",\"dueDate\":\"$due\",
+    -d "{\"customerId\":\"$customer\",\"paymentMethod\":\"BANK_TRANSFER\",\"issueDate\":\"2026-08-14\",\"dueDate\":\"$due\",
          \"items\":[{\"description\":\"$desc\",\"quantity\":\"$qty\",\"unitPrice\":\"$price\",\"taxRate\":\"18\"}]}" \
     | jqp "['data']['id']"
 }
@@ -74,7 +74,7 @@ echo
 echo "1. Creation and calculation (TICKET-024, TICKET-025)"
 
 CREATED=$(curl -s -m 15 -b "$A_JAR" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
-  -d "{\"customerId\":\"$A_CUST\",\"issueDate\":\"2026-08-14\",\"dueDate\":\"2026-09-14\",
+  -d "{\"customerId\":\"$A_CUST\",\"paymentMethod\":\"BANK_TRANSFER\",\"issueDate\":\"2026-08-14\",\"dueDate\":\"2026-09-14\",
        \"items\":[{\"description\":\"Retainer\",\"quantity\":\"4\",\"unitPrice\":\"2500\",\"taxRate\":\"18\"}]}")
 INV=$(printf '%s' "$CREATED" | jqp "['data']['id']")
 
@@ -87,18 +87,18 @@ check "11800" "$(printf '%s' "$CREATED" | jqp "['data']['amountDue']")" "amountD
 
 # Due date should default from the organisation's payment terms.
 NODUE=$(curl -s -m 15 -b "$A_JAR" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
-  -d "{\"customerId\":\"$A_CUST\",\"issueDate\":\"2026-08-14\",
+  -d "{\"customerId\":\"$A_CUST\",\"paymentMethod\":\"BANK_TRANSFER\",\"issueDate\":\"2026-08-14\",
        \"items\":[{\"description\":\"Defaulted due date\",\"quantity\":\"1\",\"unitPrice\":\"100\"}]}")
 DUEDATE=$(printf '%s' "$NODUE" | jqp "['data']['dueDate']")
 case "$DUEDATE" in 2026-09-13*) pass "Due date defaults to issue date + 30 day terms";; *) fail "Due date defaults from settings" "got '$DUEDATE'";; esac
 
 BADDUE=$(curl -s -m 10 -b "$A_JAR" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
-  -d "{\"customerId\":\"$A_CUST\",\"issueDate\":\"2026-08-14\",\"dueDate\":\"2026-08-01\",
+  -d "{\"customerId\":\"$A_CUST\",\"paymentMethod\":\"BANK_TRANSFER\",\"issueDate\":\"2026-08-14\",\"dueDate\":\"2026-08-01\",
        \"items\":[{\"description\":\"X\",\"quantity\":\"1\",\"unitPrice\":\"10\"}]}")
 check "VALIDATION_ERROR" "$(printf '%s' "$BADDUE" | jqp "['error']['code']")" "Due date before issue date rejected"
 
 TAMPER=$(curl -s -m 15 -b "$A_JAR" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
-  -d "{\"customerId\":\"$A_CUST\",\"issueDate\":\"2026-08-14\",\"totalAmount\":\"1\",\"amountPaid\":\"9999\",
+  -d "{\"customerId\":\"$A_CUST\",\"paymentMethod\":\"BANK_TRANSFER\",\"issueDate\":\"2026-08-14\",\"totalAmount\":\"1\",\"amountPaid\":\"9999\",
        \"items\":[{\"description\":\"Tamper\",\"quantity\":\"1\",\"unitPrice\":\"1000\",\"taxRate\":\"18\"}]}")
 check "1180" "$(printf '%s' "$TAMPER" | jqp "['data']['totalAmount']")" "Client-supplied total ignored"
 check "0" "$(printf '%s' "$TAMPER" | jqp "['data']['amountPaid']")" "Client-supplied amountPaid ignored"
@@ -160,7 +160,7 @@ echo
 echo "4. Overdue detection (TICKET-035)"
 
 PAST=$(curl -s -m 15 -b "$A_JAR" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
-  -d "{\"customerId\":\"$A_CUST\",\"issueDate\":\"2026-01-01\",\"dueDate\":\"2026-01-31\",
+  -d "{\"customerId\":\"$A_CUST\",\"paymentMethod\":\"BANK_TRANSFER\",\"issueDate\":\"2026-01-01\",\"dueDate\":\"2026-01-31\",
        \"items\":[{\"description\":\"Past due\",\"quantity\":\"1\",\"unitPrice\":\"1000\",\"taxRate\":\"18\"}]}" \
   | jqp "['data']['id']")
 curl -s -m 60 -b "$A_JAR" -X POST "$BASE/invoices/$PAST/send" -o /dev/null
@@ -171,7 +171,7 @@ check "OVERDUE" "$(curl -s -m 10 -b "$A_JAR" "$BASE/invoices/$PAST" | jqp "['dat
 
 # A draft that is past due must NOT be flagged: it was never issued.
 DRAFT_PAST=$(curl -s -m 15 -b "$A_JAR" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
-  -d "{\"customerId\":\"$A_CUST\",\"issueDate\":\"2026-01-01\",\"dueDate\":\"2026-01-31\",
+  -d "{\"customerId\":\"$A_CUST\",\"paymentMethod\":\"BANK_TRANSFER\",\"issueDate\":\"2026-01-01\",\"dueDate\":\"2026-01-31\",
        \"items\":[{\"description\":\"Past due draft\",\"quantity\":\"1\",\"unitPrice\":\"50\"}]}" | jqp "['data']['id']")
 curl -s -m 20 -b "$A_JAR" -X POST "$BASE/invoices/recalculate-overdue" -o /dev/null
 check "DRAFT" "$(curl -s -m 10 -b "$A_JAR" "$BASE/invoices/$DRAFT_PAST" | jqp "['data']['status']")" \
@@ -253,7 +253,7 @@ check "INVOICE_NOT_FOUND" "$(curl -s -m 30 -b "$B_JAR" "$BASE/invoices/$INV/pdf"
 # Captured into a variable first: a multi-line $(...) containing escaped
 # quotes mis-parses the trailing description argument to check().
 XORG_BODY=$(curl -s -m 10 -b "$A_JAR" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
-  -d "{\"customerId\":\"${B_CUST}\",\"issueDate\":\"2026-08-14\",\"items\":[{\"description\":\"X\",\"quantity\":\"1\",\"unitPrice\":\"10\"}]}")
+  -d "{\"customerId\":\"${B_CUST}\",\"paymentMethod\":\"BANK_TRANSFER\",\"issueDate\":\"2026-08-14\",\"items\":[{\"description\":\"X\",\"quantity\":\"1\",\"unitPrice\":\"10\"}]}")
 XORG_CODE=$(printf '%s' "$XORG_BODY" | jqp "['error']['code']")
 check "CUSTOMER_NOT_FOUND" "$XORG_CODE" "Cannot invoice another org's customer"
 echo

@@ -145,6 +145,15 @@ export const cancelQuotationSchema = z.object({
 
 /** Conversion (TICKET-022). Dates are optional; org defaults fill the gaps. */
 export const convertQuotationSchema = z.object({
+  /**
+   * Optional here, unlike on a directly created invoice. Conversion is an
+   * existing API with existing callers; requiring it would break them, and a
+   * converted draft can have the mode set before it is sent.
+   */
+  paymentMethod: z
+    .enum(['CASH', 'BANK_TRANSFER', 'CARD', 'CHEQUE', 'UPI', 'OTHER'])
+    .optional()
+    .nullable(),
   issueDate: dateOnly.optional(),
   dueDate: dateOnly.optional(),
   notes: z.string().trim().max(5000).optional().nullable(),

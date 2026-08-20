@@ -74,7 +74,7 @@ echo
 echo "2. Drafts do not count as invoiced"
 
 DRAFT=$(curl -s -m 15 -b "$JAR" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
-  -d "{\"customerId\":\"$CUST\",\"issueDate\":\"$TODAY\",
+  -d "{\"customerId\":\"$CUST\",\"paymentMethod\":\"BANK_TRANSFER\",\"issueDate\":\"$TODAY\",
        \"items\":[{\"description\":\"Draft work\",\"quantity\":\"1\",\"unitPrice\":\"5000\",\"taxRate\":\"0\"}]}" \
   | jqp "['data']['id']")
 
@@ -123,7 +123,7 @@ echo
 echo "5. Overdue detection (TICKET-039, TICKET-035)"
 
 PAST=$(curl -s -m 15 -b "$JAR" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
-  -d "{\"customerId\":\"$CUST\",\"issueDate\":\"2026-01-01\",\"dueDate\":\"2026-01-31\",
+  -d "{\"customerId\":\"$CUST\",\"paymentMethod\":\"BANK_TRANSFER\",\"issueDate\":\"2026-01-01\",\"dueDate\":\"2026-01-31\",
        \"items\":[{\"description\":\"Late work\",\"quantity\":\"1\",\"unitPrice\":\"8000\",\"taxRate\":\"0\"}]}" \
   | jqp "['data']['id']")
 curl -s -m 60 -b "$JAR" -X POST "$BASE/invoices/$PAST/send" -o /dev/null
@@ -139,7 +139,7 @@ check "8000.0000" "$(printf '%s' "$OD" | jqp "['data']['totals']['outstanding']"
 
 # A settled invoice can never be overdue, however old.
 OLD_PAID=$(curl -s -m 15 -b "$JAR" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
-  -d "{\"customerId\":\"$CUST\",\"issueDate\":\"2026-01-01\",\"dueDate\":\"2026-01-15\",
+  -d "{\"customerId\":\"$CUST\",\"paymentMethod\":\"BANK_TRANSFER\",\"issueDate\":\"2026-01-01\",\"dueDate\":\"2026-01-15\",
        \"items\":[{\"description\":\"Old but paid\",\"quantity\":\"1\",\"unitPrice\":\"1000\",\"taxRate\":\"0\"}]}" \
   | jqp "['data']['id']")
 curl -s -m 60 -b "$JAR" -X POST "$BASE/invoices/$OLD_PAID/send" -o /dev/null
@@ -155,7 +155,7 @@ echo
 echo "6. Cancelled invoices leave the totals"
 
 CANC=$(curl -s -m 15 -b "$JAR" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
-  -d "{\"customerId\":\"$CUST\",\"issueDate\":\"$TODAY\",
+  -d "{\"customerId\":\"$CUST\",\"paymentMethod\":\"BANK_TRANSFER\",\"issueDate\":\"$TODAY\",
        \"items\":[{\"description\":\"To cancel\",\"quantity\":\"1\",\"unitPrice\":\"4000\",\"taxRate\":\"0\"}]}" \
   | jqp "['data']['id']")
 curl -s -m 60 -b "$JAR" -X POST "$BASE/invoices/$CANC/send" -o /dev/null
@@ -199,7 +199,7 @@ echo
 echo "8. Recent documents (TICKET-040)"
 
 QUOTE=$(curl -s -m 15 -b "$JAR" -X POST "$BASE/quotations" -H 'Content-Type: application/json' \
-  -d "{\"customerId\":\"$CUST\",\"issueDate\":\"$TODAY\",
+  -d "{\"customerId\":\"$CUST\",\"paymentMethod\":\"BANK_TRANSFER\",\"issueDate\":\"$TODAY\",
        \"items\":[{\"description\":\"Pipeline work\",\"quantity\":\"1\",\"unitPrice\":\"30000\",\"taxRate\":\"0\"}]}" \
   | jqp "['data']['id']")
 curl -s -m 60 -b "$JAR" -X POST "$BASE/quotations/$QUOTE/send" -o /dev/null

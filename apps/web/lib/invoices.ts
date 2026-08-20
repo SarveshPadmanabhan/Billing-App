@@ -24,6 +24,7 @@ export interface Invoice {
   id: string;
   organisationId: string;
   customerId: string;
+  paymentMethod: string | null;
   quotationId: string | null;
   invoiceNumber: string;
   issueDate: string;
@@ -96,6 +97,8 @@ export const getInvoice = (id: string) => apiFetch<InvoiceDetail>(`/invoices/${i
 
 export interface InvoiceFormValues {
   customerId: string;
+  /** Required on invoices: how the customer is expected to pay. */
+  paymentMethod: string;
   issueDate: string;
   dueDate: string;
   items: LineItemDraft[];
@@ -107,6 +110,7 @@ export interface InvoiceFormValues {
 function toPayload(values: InvoiceFormValues) {
   return {
     customerId: values.customerId,
+    paymentMethod: values.paymentMethod,
     issueDate: values.issueDate,
     dueDate: values.dueDate || null,
     items: values.items.map((item) => ({
@@ -121,8 +125,9 @@ function toPayload(values: InvoiceFormValues) {
       discountRate: null,
       taxRate: item.taxRate || '0',
     })),
-    discount:
-      values.discountRate && Number(values.discountRate) > 0 ? { rate: values.discountRate } : null,
+    // Overall discount was removed from the invoice form. Documents created
+    // before that keep their stored value; new ones never set one.
+    discount: null,
     notes: values.notes.trim() || null,
     terms: values.terms.trim() || null,
   };
@@ -210,6 +215,9 @@ export function emptyInvoiceForm(defaultTaxRate = '0', paymentTermsDays = 30): I
         taxRate: defaultTaxRate,
       },
     ],
+    // Blank rather than a guess: the user must state how the invoice is paid,
+    // and pre-selecting CASH would record a choice nobody made.
+    paymentMethod: '',
     discountRate: '',
     notes: '',
     terms: '',
@@ -222,6 +230,9 @@ const trimZeros = (value: string) =>
 export function invoiceToForm(invoice: InvoiceDetail): InvoiceFormValues {
   return {
     customerId: invoice.customerId,
+    // Invoices predating this field have none; the form shows it unset and the
+    // user must choose before saving rather than inheriting a fabricated value.
+    paymentMethod: invoice.paymentMethod ?? '',
     issueDate: invoice.issueDate.slice(0, 10),
     dueDate: invoice.dueDate.slice(0, 10),
     items: invoice.items.map((item) => ({

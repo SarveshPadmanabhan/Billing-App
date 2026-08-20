@@ -60,7 +60,7 @@ is_uuid "$A_ORG" && is_uuid "$A_CUST" || { echo "fixture setup failed"; exit 1; 
 
 # A sent invoice with a payment, reused across several checks.
 INV=$(curl -s -m 15 -b "$A_JAR" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
-  -d "{\"customerId\":\"$A_CUST\",\"issueDate\":\"$TODAY\",
+  -d "{\"customerId\":\"$A_CUST\",\"paymentMethod\":\"BANK_TRANSFER\",\"issueDate\":\"$TODAY\",
        \"items\":[{\"description\":\"Audit item\",\"quantity\":\"2\",\"unitPrice\":\"5000\",\"taxRate\":\"18\"}]}" \
   | jqp "['data']['id']")
 curl -s -m 60 -b "$A_JAR" -X POST "$BASE/invoices/$INV/send" -o /dev/null
@@ -131,7 +131,7 @@ echo "TICKET-043 — Accidental Deletion Protection"
 
 # Criterion: paid invoices cannot be deleted.
 PAID=$(curl -s -m 15 -b "$A_JAR" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
-  -d "{\"customerId\":\"$A_CUST\",\"issueDate\":\"$TODAY\",
+  -d "{\"customerId\":\"$A_CUST\",\"paymentMethod\":\"BANK_TRANSFER\",\"issueDate\":\"$TODAY\",
        \"items\":[{\"description\":\"Paid item\",\"quantity\":\"1\",\"unitPrice\":\"1000\",\"taxRate\":\"0\"}]}" \
   | jqp "['data']['id']")
 curl -s -m 60 -b "$A_JAR" -X POST "$BASE/invoices/$PAID/send" -o /dev/null
@@ -168,7 +168,7 @@ fi
 
 # Criterion: cancelled invoices remain in history.
 CANC=$(curl -s -m 15 -b "$A_JAR" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
-  -d "{\"customerId\":\"$A_CUST\",\"issueDate\":\"$TODAY\",
+  -d "{\"customerId\":\"$A_CUST\",\"paymentMethod\":\"BANK_TRANSFER\",\"issueDate\":\"$TODAY\",
        \"items\":[{\"description\":\"Cancel me\",\"quantity\":\"1\",\"unitPrice\":\"900\",\"taxRate\":\"0\"}]}" \
   | jqp "['data']['id']")
 curl -s -m 20 -b "$A_JAR" -X POST "$BASE/invoices/$CANC/cancel" -H 'Content-Type: application/json' \

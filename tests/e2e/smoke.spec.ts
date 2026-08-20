@@ -206,11 +206,9 @@ test.describe('smoke', () => {
     await signInToScratchOrg(page);
 
     await page.goto('/quotations/new');
-    // Customer is a searchable combobox, not a native select. Wait for the
-    // field to be enabled — it is disabled while the customer list loads, so
-    // clicking earlier would open an empty menu.
-    // The customer combobox only suggests once something is typed, so search
-    // for the customer this suite created rather than opening a full list.
+    // The customer combobox suggests only once something is typed, and is
+    // disabled while the list loads — so wait for enabled, then search for the
+    // customer this suite created.
     await page.waitForSelector('#customerId:not([disabled])');
     await page.fill('#customerId', 'Scratch Client');
     await page.locator('[role="option"]').first().click();
@@ -250,11 +248,9 @@ test.describe('smoke', () => {
     await signInToScratchOrg(page);
 
     await page.goto('/invoices/new');
-    // Customer is a searchable combobox, not a native select. Wait for the
-    // field to be enabled — it is disabled while the customer list loads, so
-    // clicking earlier would open an empty menu.
-    // The customer combobox only suggests once something is typed, so search
-    // for the customer this suite created rather than opening a full list.
+    // The customer combobox suggests only once something is typed, and is
+    // disabled while the list loads — so wait for enabled, then search for the
+    // customer this suite created.
     await page.waitForSelector('#customerId:not([disabled])');
     await page.fill('#customerId', 'Scratch Client');
     await page.locator('[role="option"]').first().click();
@@ -263,6 +259,9 @@ test.describe('smoke', () => {
     await page.fill('input[aria-label="Quantity for line 1"]', '2');
     await page.fill('input[aria-label="Unit price for line 1"]', '1500');
     await page.fill('input[aria-label="Tax percent for line 1"]', '18');
+
+    // Mode of payment is required on invoices.
+    await page.selectOption('#paymentMethod', 'BANK_TRANSFER');
 
     await page.click('button[type=submit]');
     await page.waitForURL(/\/invoices\/[0-9a-f-]{36}$/);

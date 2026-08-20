@@ -38,6 +38,8 @@ import {
   Money,
   Modal,
   Input,
+  Select,
+  Field,
   ErrorState,
   TableSkeleton,
 } from '../../../../components/ui/primitives';
@@ -59,6 +61,7 @@ export default function QuotationDetailPage() {
   const id = String(params?.id ?? '');
 
   const [dialog, setDialog] = useState<DialogKind>(null);
+  const [convertPaymentMethod, setConvertPaymentMethod] = useState('');
   const [reason, setReason] = useState('');
   const [working, setWorking] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -522,7 +525,7 @@ export default function QuotationDetailPage() {
               loading={working}
               onClick={() =>
                 run(async () => {
-                  const result = await convertQuotation(id);
+                  const result = await convertQuotation(id, convertPaymentMethod || undefined);
                   setNotice(
                     result.alreadyConverted
                       ? `Already converted to ${result.invoice.invoiceNumber}.`
@@ -544,6 +547,27 @@ export default function QuotationDetailPage() {
           Amounts are carried across exactly as quoted, so the invoice matches what the customer
           accepted.
         </p>
+        <div className="mt-4">
+          <Field
+            label="Mode of payment"
+            htmlFor="convertPaymentMethod"
+            hint="Optional here — it can be set on the draft before sending."
+          >
+            <Select
+              id="convertPaymentMethod"
+              value={convertPaymentMethod}
+              onChange={(e) => setConvertPaymentMethod(e.target.value)}
+            >
+              <option value="">Not decided yet</option>
+              <option value="CASH">Cash</option>
+              <option value="BANK_TRANSFER">Bank transfer</option>
+              <option value="CARD">Card</option>
+              <option value="CHEQUE">Cheque</option>
+              <option value="UPI">UPI</option>
+              <option value="OTHER">Other</option>
+            </Select>
+          </Field>
+        </div>
       </Modal>
     </div>
   );
