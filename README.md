@@ -63,15 +63,23 @@ Two roles, deliberately:
 - `billing_app` — the runtime role. **Not** a superuser and **without**
   `BYPASSRLS`, so row-level security actually applies to application queries.
 
+Run `./scripts/setup-database.sh` to do all of this in one step, or follow it
+manually:
+
 ```bash
 psql -h localhost -d postgres <<'SQL'
-CREATE ROLE billing_owner LOGIN PASSWORD 'billing_owner' CREATEDB;
+CREATE ROLE billing_owner LOGIN PASSWORD 'billing_owner' CREATEDB BYPASSRLS;
 CREATE ROLE billing_app   LOGIN PASSWORD 'billing_app';
 SQL
 
 createdb -h localhost -O billing_owner billing_dev
 
 psql -h localhost -U billing_owner -d billing_dev <<'SQL'
+-- Postgres 15+ revokes CREATE on the public schema by default, and without
+-- this the very first migration fails with "permission denied for schema
+-- public".
+GRANT ALL ON SCHEMA public TO billing_owner;
+
 GRANT USAGE ON SCHEMA public TO billing_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE billing_owner IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO billing_app;
@@ -82,6 +90,15 @@ SQL
 
 `CREATEDB` on `billing_owner` is required by Prisma Migrate for its shadow
 database.
+
+`BYPASSRLS` on `billing_owner` is **required**, and only on that role. Every
+tenant table uses `FORCE ROW LEVEL SECURITY`, which applies to the table owner
+too — so without it a data migration reads zero rows and silently does nothing.
+That is not hypothetical: it is how one migration here created sequences for
+217 of 237 organisations while reporting success.
+
+`billing_app` must NOT have it. That role is the application, and RLS applying
+to it is the whole point of the isolation guarantee.
 
 ### 2b. Object storage (MinIO) and PDF rendering
 

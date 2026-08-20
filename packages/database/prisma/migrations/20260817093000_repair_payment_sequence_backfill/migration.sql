@@ -30,8 +30,11 @@ DECLARE
   missing INT;
 BEGIN
   SELECT count(*) INTO company_total FROM companies;
+  -- As above: no companies on a fresh database is correct, not a filtered
+  -- read. BYPASSRLS has already been verified.
   IF company_total = 0 THEN
-    RAISE EXCEPTION 'no companies visible; refusing to run a repair that would do nothing';
+    RAISE NOTICE 'no companies yet; nothing to repair (fresh database)';
+    RETURN;
   END IF;
 
   -- One sequence per company per document type. current_number is seeded past

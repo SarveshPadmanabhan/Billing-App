@@ -73,11 +73,15 @@ DECLARE
 BEGIN
   SELECT count(*) INTO org_total FROM organisations;
 
-  -- Refuse on an implausible zero: an empty organisations table means either a
-  -- genuinely empty database or an RLS filter, and the two are
-  -- indistinguishable from a row count alone.
+  -- Zero organisations is legitimate on a fresh database — a new deployment
+  -- has none yet, and the backfill correctly has nothing to do. It is only
+  -- suspicious when RLS could be hiding rows, and the BYPASSRLS check above
+  -- has already ruled that out. Failing here would make these migrations
+  -- unable to build an empty database, which is exactly what a new
+  -- installation does.
   IF org_total = 0 THEN
-    RAISE EXCEPTION 'no organisations visible; refusing to run a backfill that would do nothing';
+    RAISE NOTICE 'no organisations yet; nothing to backfill (fresh database)';
+    RETURN;
   END IF;
 
   INSERT INTO companies (
