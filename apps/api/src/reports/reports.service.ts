@@ -150,11 +150,30 @@ export class ReportsService {
    * Collected is summed from payment allocations rather than invoice
    * amountPaid, so the month is the month the money arrived.
    */
-  async revenue(org: OrganisationContext, months: number): Promise<RevenueReport> {
+  async revenue(org: OrganisationContext, range: RevenueRange): Promise<RevenueReport> {
     return withTenant(org.organisationId, async (tx) => {
       const today = todayUtc();
-      const start = new Date(
-        Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - (months - 1), 1),
+
+      // An explicit range wins over the month count. Both are snapped to whole
+      // months because the report groups by month: a range starting mid-month
+      // would silently drop the earlier part of that month's figures while
+      // still labelling the row with the whole month.
+      const start = range.from
+        ? startOfMonth(range.from)
+        : new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - (range.months - 1), 1));
+
+      const endMonth = range.to ? startOfMonth(range.to) : startOfMonth(today);
+
+      // `end` is the first instant AFTER the last month, so the SQL can use a
+      // half-open range. Comparing with <= against a month start would exclude
+      // everything after midnight on the 1st.
+      const end = new Date(Date.UTC(endMonth.getUTCFullYear(), endMonth.getUTCMonth() + 1, 1));
+
+      const monthCount = Math.max(
+        1,
+        (endMonth.getUTCFullYear() - start.getUTCFullYear()) * 12 +
+          (endMonth.getUTCMonth() - start.getUTCMonth()) +
+          1,
       );
 
       const [invoiced, collected, organisation] = await Promise.all([
@@ -167,6 +186,7 @@ export class ReportsService {
              AND company_id = ${org.companyId}::uuid
              AND status = ANY(${[...LIVE_INVOICE_STATUSES]}::invoice_status[])
              AND issue_date >= ${start}
+             AND issue_date < ${end}
            GROUP BY 1 ORDER BY 1
         `,
         // Allocations, not invoice.amountPaid: this asks when cash arrived.
@@ -180,6 +200,7 @@ export class ReportsService {
              AND p.company_id = ${org.companyId}::uuid
              AND p.status = 'RECORDED'
              AND p.payment_date >= ${start}
+             AND p.payment_date < ${end}
            GROUP BY 1 ORDER BY 1
         `,
         tx.organisation.findUniqueOrThrow({
@@ -194,7 +215,7 @@ export class ReportsService {
       // Emit every month in the range, including empty ones. A chart that
       // silently skips a month with no activity misrepresents the trend.
       const rows: RevenueRow[] = [];
-      for (let i = 0; i < months; i += 1) {
+      for (let i = 0; i < monthCount; i += 1) {
         const d = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + i, 1));
         const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
         rows.push({
@@ -212,6 +233,8 @@ export class ReportsService {
 
       return {
         currencyCode: organisation.currencyCode,
+        from: rows[0]?.month ?? '',
+        to: rows[rows.length - 1]?.month ?? '',
         months: rows,
         totals: {
           invoiced: sum((r) => r.invoiced),
@@ -261,6 +284,18 @@ export interface AgingReport {
   };
 }
 
+/** Whole-month boundary, so grouping and filtering agree. */
+function startOfMonth(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+}
+
+export interface RevenueRange {
+  /** Used when `from`/`to` are absent. */
+  months: number;
+  from?: Date;
+  to?: Date;
+}
+
 interface RevenueRow {
   month: string;
   invoiced: string;
@@ -270,6 +305,9 @@ interface RevenueRow {
 
 export interface RevenueReport {
   currencyCode: string;
+  /** First and last month actually covered, as YYYY-MM. */
+  from: string;
+  to: string;
   months: RevenueRow[];
   totals: { invoiced: string; collected: string; invoiceCount: number };
 }

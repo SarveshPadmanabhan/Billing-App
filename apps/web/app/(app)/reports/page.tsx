@@ -11,6 +11,7 @@ import {
   Card,
   Money,
   Select,
+  Input,
   Field,
   EmptyState,
   ErrorState,
@@ -42,6 +43,8 @@ interface AgingReport {
 
 interface RevenueReport {
   currencyCode: string;
+  from: string;
+  to: string;
   months: Array<{ month: string; invoiced: string; collected: string; invoiceCount: number }>;
   totals: { invoiced: string; collected: string; invoiceCount: number };
 }
@@ -62,6 +65,15 @@ const formatDate = (iso: string) =>
 
 export default function ReportsPage() {
   const [months, setMonths] = useState('12');
+  // Empty means "use the preset". Only a complete pair is sent — a half-filled
+  // range would silently report something other than what is on screen.
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+
+  const usingDates = Boolean(from && to);
+  const revenueQuery = usingDates
+    ? `from=${from}&to=${to}`
+    : `months=${months}`;
 
   const { data: me } = useQuery({
     queryKey: ['auth', 'me'],
@@ -74,8 +86,8 @@ export default function ReportsPage() {
   });
 
   const revenue = useQuery({
-    queryKey: ['reports', 'revenue', months],
-    queryFn: () => apiFetch<RevenueReport>(`/reports/revenue?months=${months}`),
+    queryKey: ['reports', 'revenue', revenueQuery],
+    queryFn: () => apiFetch<RevenueReport>(`/reports/revenue?${revenueQuery}`),
     placeholderData: (previous) => previous,
   });
 
@@ -206,17 +218,58 @@ export default function ReportsPage() {
               another.
             </p>
           </div>
-          <div className="flex items-end gap-3">
+          <div className="flex flex-wrap items-end gap-3">
             <div className="w-40">
               <Field label="Period" htmlFor="months">
-                <Select id="months" value={months} onChange={(e) => setMonths(e.target.value)}>
+                <Select
+                  id="months"
+                  value={months}
+                  disabled={usingDates}
+                  onChange={(e) => setMonths(e.target.value)}
+                >
                   <option value="6">Last 6 months</option>
                   <option value="12">Last 12 months</option>
                   <option value="24">Last 24 months</option>
                 </Select>
               </Field>
             </div>
-            <a href={`${API_BASE}/reports/revenue.csv?months=${months}`} download>
+
+            <div className="w-44">
+              <Field label="From" htmlFor="revenue-from">
+                <Input
+                  id="revenue-from"
+                  type="date"
+                  value={from}
+                  max={to || undefined}
+                  onChange={(e) => setFrom(e.target.value)}
+                />
+              </Field>
+            </div>
+            <div className="w-44">
+              <Field label="To" htmlFor="revenue-to">
+                <Input
+                  id="revenue-to"
+                  type="date"
+                  value={to}
+                  min={from || undefined}
+                  onChange={(e) => setTo(e.target.value)}
+                />
+              </Field>
+            </div>
+
+            {(from || to) && (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setFrom('');
+                  setTo('');
+                }}
+              >
+                Clear dates
+              </Button>
+            )}
+
+            <a href={`${API_BASE}/reports/revenue.csv?${revenueQuery}`} download>
               <Button variant="secondary">
                 <Download className="h-4 w-4" aria-hidden="true" />
                 CSV
@@ -224,6 +277,13 @@ export default function ReportsPage() {
             </a>
           </div>
         </div>
+
+        {Boolean(from) !== Boolean(to) && (
+          <p className="text-body-sm text-warning">
+            Pick both a start and an end date to filter by range — showing the selected period
+            until then.
+          </p>
+        )}
 
         {revenue.isLoading ? (
           <TableSkeleton rows={6} columns={4} />

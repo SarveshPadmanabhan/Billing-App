@@ -7,9 +7,33 @@ import { CurrentOrganisation } from '../common/decorators/current-context.decora
 import { RequirePermission } from '../common/decorators/require-permission.decorator.js';
 import { ReportsService } from './reports.service.js';
 
-const revenueQuerySchema = z.object({
-  /** How many months back, inclusive of the current one. */
-  months: z.coerce.number().int().min(1).max(36).default(12),
+/** YYYY-MM-DD, as sent by a native date input. */
+const dateOnly = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a YYYY-MM-DD date')
+  .refine((v) => !Number.isNaN(Date.parse(`${v}T00:00:00Z`)), 'Not a real date');
+
+const revenueQuerySchema = z
+  .object({
+    /** Fallback when no explicit range is given: months back, inclusive. */
+    months: z.coerce.number().int().min(1).max(36).default(12),
+    from: dateOnly.optional(),
+    to: dateOnly.optional(),
+  })
+  .refine((q) => !(q.from && q.to) || q.from <= q.to, {
+    message: 'The start date must be on or before the end date',
+    path: ['from'],
+  });
+
+type RevenueQuery = z.infer<typeof revenueQuerySchema>;
+
+/** Parsed at UTC midnight to match how due dates and month boundaries are stored. */
+const toUtcDate = (value?: string) => (value ? new Date(`${value}T00:00:00Z`) : undefined);
+
+const rangeOf = (q: RevenueQuery) => ({
+  months: q.months,
+  from: toUtcDate(q.from),
+  to: toUtcDate(q.to),
 });
 
 /**
@@ -33,9 +57,9 @@ export class ReportsController {
   @Get('revenue')
   async revenue(
     @CurrentOrganisation() org: OrganisationContext,
-    @Query(zodPipe(revenueQuerySchema)) query: { months: number },
+    @Query(zodPipe(revenueQuerySchema)) query: RevenueQuery,
   ) {
-    return this.reports.revenue(org, query.months);
+    return this.reports.revenue(org, rangeOf(query));
   }
 
   /**
@@ -80,16 +104,18 @@ export class ReportsController {
   @Get('revenue.csv')
   async revenueCsv(
     @CurrentOrganisation() org: OrganisationContext,
-    @Query(zodPipe(revenueQuerySchema)) query: { months: number },
+    @Query(zodPipe(revenueQuerySchema)) query: RevenueQuery,
     @Res() res: Response,
   ) {
-    const report = await this.reports.revenue(org, query.months);
+    const report = await this.reports.revenue(org, rangeOf(query));
     const rows = [
       ['Month', 'Invoices', 'Invoiced', 'Collected'],
       ...report.months.map((m) => [m.month, String(m.invoiceCount), m.invoiced, m.collected]),
       ['TOTAL', String(report.totals.invoiceCount), report.totals.invoiced, report.totals.collected],
     ];
-    send(res, `revenue-${report.months[0]?.month ?? 'report'}.csv`, rows);
+    // Name the file after the range it covers, so several downloads do not
+    // all land in the same folder as "revenue.csv".
+    send(res, `revenue-${report.from || 'report'}-to-${report.to || ''}.csv`, rows);
   }
 }
 
