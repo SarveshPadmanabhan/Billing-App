@@ -49,15 +49,15 @@ export default function RegisterPage() {
   }
 
   return (
-    <main className="relative flex min-h-screen items-center justify-end overflow-hidden bg-canvas px-4 py-8 sm:px-10">
+    <main className="relative flex min-h-screen items-center justify-end overflow-hidden px-4 py-8 sm:px-10">
       {/* Same treatment as sign-in: the two pages link to each other, so a
           different background on each reads as two different products. */}
-      <div aria-hidden="true" className="absolute inset-0 -z-10 bg-gradient-to-br from-[#1E293B] via-[#334155] to-[#0F172A]">
+      <div aria-hidden="true" className="absolute inset-0 z-0 bg-gradient-to-br from-[#1E293B] via-[#334155] to-[#0F172A]">
         <img src="/login-background.jpg" alt="" className="h-full w-full object-cover" />
         <div className="absolute inset-0 bg-ink/30" />
       </div>
 
-      <div className="w-full max-w-[440px] rounded-lg border border-white/10 bg-surface p-6 shadow-modal">
+      <div className="relative z-10 w-full max-w-[440px] rounded-lg border border-white/10 bg-surface p-6 shadow-modal">
         <h1 className="text-h2 text-ink">Create your account</h1>
         <p className="mt-1 text-body text-ink-muted">Start billing in a few minutes.</p>
 

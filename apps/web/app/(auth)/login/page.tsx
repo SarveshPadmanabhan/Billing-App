@@ -108,7 +108,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <main className="relative flex min-h-screen items-center justify-end overflow-hidden bg-canvas px-4 sm:px-10">
+    <main className="relative flex min-h-screen items-center justify-end overflow-hidden px-4 sm:px-10">
       {/*
         Full-bleed background. Plain <img> rather than next/image: this is a
         single decorative image with no layout to shift, and it must cover the
@@ -121,7 +121,7 @@ export default function LoginPage() {
         ever missing the card still lands on a solid surface instead of white
         text on white.
       */}
-      <div aria-hidden="true" className="absolute inset-0 -z-10 bg-gradient-to-br from-[#1E293B] via-[#334155] to-[#0F172A]">
+      <div aria-hidden="true" className="absolute inset-0 z-0 bg-gradient-to-br from-[#1E293B] via-[#334155] to-[#0F172A]">
         <img
           src="/login-background.jpg"
           alt=""
@@ -136,7 +136,7 @@ export default function LoginPage() {
         <div className="absolute inset-0 bg-ink/30" />
       </div>
 
-      <div className="w-full max-w-[400px] rounded-lg border border-white/10 bg-surface p-6 shadow-modal">
+      <div className="relative z-10 w-full max-w-[400px] rounded-lg border border-white/10 bg-surface p-6 shadow-modal">
         <h1 className="text-h2 text-ink">Sign in</h1>
         <p className="mt-1 text-body text-ink-muted">Access your billing workspace.</p>
         <Suspense
