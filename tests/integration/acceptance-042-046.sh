@@ -46,8 +46,21 @@ except Exception: print('')" "$1" 2>/dev/null; }
 is_uuid() { printf '%s' "$1" | grep -Eq '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'; }
 code() { curl -s -m "$REQ_TIMEOUT" -o /dev/null -w '%{http_code}' "$@"; }
 
-PSQL() { psql -h localhost -d billing_dev -tAc "$1" 2>&1; }
 export PATH="/opt/homebrew/opt/postgresql@16/bin:$PATH"
+
+# Talk to whatever database the app uses, not a hardcoded local one. Pointed at
+# localhost while the app ran on Supabase, these checks deleted from an empty
+# local table and reported "DELETE 0" — a pass-looking result that proved
+# nothing about the database under test.
+DB_TARGET="${DB_TARGET:-}"
+if [ -z "$DB_TARGET" ] && [ -f "$(dirname "$0")/../../.env" ]; then
+  DB_TARGET=$(grep -E "^DATABASE_MIGRATION_URL=" "$(dirname "$0")/../../.env" | head -1 | cut -d= -f2-)
+fi
+if [ -n "$DB_TARGET" ]; then
+  PSQL() { psql "$DB_TARGET" -tAc "$1" 2>&1; }
+else
+  PSQL() { psql -h localhost -d billing_dev -tAc "$1" 2>&1; }
+fi
 
 A_JAR="$TMP/a.jar"; B_JAR="$TMP/b.jar"
 
