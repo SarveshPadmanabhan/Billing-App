@@ -161,6 +161,40 @@ secret values. In production these come from a secret manager, never a file.
 > if manual exploration has cluttered them. It only touches those two
 > organisations and refuses to run in production.
 
+### Running against Supabase
+
+The app uses Supabase purely as hosted Postgres — not Supabase Auth, PostgREST
+or the client SDK. Auth is Better Auth and access control is this project's own
+RLS policies, so only the connection strings change.
+
+Two connections, for the same reason as locally:
+
+```
+# Migrations. Needs BYPASSRLS, which Supabase's built-in `postgres` role has.
+# SESSION pooler on 5432 — Prisma Migrate needs advisory locks, which the
+# transaction pooler on 6543 cannot provide.
+DATABASE_MIGRATION_URL=postgresql://postgres.<ref>:<pw>@aws-0-<region>.pooler.supabase.com:5432/postgres
+
+# Runtime. MUST NOT have BYPASSRLS. Transaction pooler on 6543 is correct here.
+DATABASE_URL=postgresql://billing_app.<ref>:<pw>@aws-0-<region>.pooler.supabase.com:6543/postgres?pgbouncer=true
+```
+
+Create the runtime role once, before migrating:
+
+```bash
+psql "$DATABASE_MIGRATION_URL" -v app_password="'a-strong-password'" \
+     -f scripts/setup-supabase.sql
+```
+
+**Never point `DATABASE_URL` at the `postgres` role.** It has BYPASSRLS, so
+row-level security would not apply to application queries — every tenant would
+see every other tenant's data, with no error to reveal it. The setup script
+refuses to finish if `billing_app` somehow ends up with BYPASSRLS.
+
+Note on the direct host: `db.<ref>.supabase.co:5432` is IPv6-only and, on some
+projects, refuses connections entirely. The session pooler works in both cases
+and is the safer default.
+
 ### Preparing a handover or a fresh environment
 
 `./scripts/reset-database.sh` drops the database and rebuilds it empty from the
