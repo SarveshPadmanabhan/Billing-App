@@ -49,6 +49,7 @@ export class CompaniesController {
           countryCode: true,
           currencyCode: true,
           taxNumber: true,
+          upiId: true,
           invoicePrefix: true,
           quotationPrefix: true,
           isDefault: true,
@@ -90,6 +91,7 @@ export class CompaniesController {
           postalCode: input.postalCode ?? null,
           countryCode: input.countryCode,
           taxNumber: input.taxNumber ?? null,
+          upiId: input.upiId ?? null,
           currencyCode: input.currencyCode,
           invoicePrefix: input.invoicePrefix,
           quotationPrefix: input.quotationPrefix,
@@ -163,6 +165,7 @@ export class CompaniesController {
           ...(input.postalCode !== undefined && { postalCode: input.postalCode }),
           ...(input.countryCode !== undefined && { countryCode: input.countryCode }),
           ...(input.taxNumber !== undefined && { taxNumber: input.taxNumber }),
+          ...(input.upiId !== undefined && { upiId: input.upiId }),
         },
       });
 

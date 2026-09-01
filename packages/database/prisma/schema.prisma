@@ -293,6 +293,12 @@ model Company {
   postalCode     String? @map("postal_code") @db.VarChar(30)
   countryCode    String  @default("IN") @map("country_code") @db.Char(2)
   taxNumber      String? @map("tax_number") @db.VarChar(100)
+
+  /// UPI ID (VPA) this company collects into, e.g. "name@bank".
+  /// Per company, not per organisation: companies are separate legal entities
+  /// and generally bank separately, so sharing one would route a customer's
+  /// payment to the wrong entity.
+  upiId          String? @map("upi_id") @db.VarChar(255)
   currencyCode   String  @default("INR") @map("currency_code") @db.Char(3)
 
   /// Numbering prefixes are per company so two entities never interleave

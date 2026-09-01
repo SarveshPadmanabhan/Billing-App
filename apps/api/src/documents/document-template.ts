@@ -80,6 +80,13 @@ export interface TemplateData {
   paymentMethod?: string | null;
   dispatchedThrough?: string | null;
 
+  /**
+   * UPI payment QR, as a data URI. Present only when the company has a UPI ID
+   * AND the invoice still has a balance — a scannable pay-now code on a
+   * settled invoice invites a duplicate payment.
+   */
+  payment?: { qrDataUri: string; upiId: string; amountDue: string } | null;
+
   notes: string | null;
   terms: string | null;
   generatedAt: string;
@@ -229,6 +236,18 @@ export function renderDocumentHtml(data: TemplateData): string {
     border-top: 1.5px solid #CBD5E1; font-size: 12pt; font-weight: 700; padding-top: 8px;
   }
 
+  .pay {
+    margin-top: 24px;
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    page-break-inside: avoid;
+  }
+  .pay img { width: 120px; height: 120px; display: block; }
+  .pay .pay-text { font-size: 11px; color: #475569; }
+  .pay .pay-text strong { display: block; font-size: 12px; color: #0F172A; margin-bottom: 2px; }
+  .pay .pay-id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #0F172A; }
+
   .notes { margin-top: 24px; page-break-inside: avoid; }
   .notes h2 {
     font-size: 8.5pt; text-transform: uppercase; letter-spacing: 0.06em;
@@ -351,6 +370,21 @@ export function renderDocumentHtml(data: TemplateData): string {
       ${paymentRows}
     </table>
   </div>
+
+  ${
+    // The QR is only built when there is a balance, so its presence is the
+    // whole condition — see TemplateData.payment.
+    data.payment
+      ? `<div class="pay">
+           <img src="${data.payment.qrDataUri}" alt="UPI payment QR code" />
+           <div class="pay-text">
+             <strong>Scan to pay ${esc(data.payment.amountDue)}</strong>
+             Any UPI app — the amount is filled in for you.<br />
+             <span class="pay-id">${esc(data.payment.upiId)}</span>
+           </div>
+         </div>`
+      : ''
+  }
 
   ${
     data.notes || data.terms

@@ -1,4 +1,5 @@
 import { Injectable, Inject, OnModuleDestroy } from '@nestjs/common';
+import { renderUpiQrDataUri, isValidUpiId } from './upi-qr.js';
 import { createHash } from 'node:crypto';
 import { chromium, type Browser } from 'playwright';
 import { withTenant, Prisma, type TenantClient } from '@billing/database';
@@ -366,6 +367,45 @@ export class PdfService implements OnModuleDestroy {
     }));
   }
 
+  /**
+   * UPI payment QR, or null.
+   *
+   * Built only when the company has a UPI ID and the invoice still owes
+   * something. A pay-now code on a settled or cancelled invoice invites a
+   * duplicate payment, which is worse than having no code at all.
+   *
+   * A malformed stored ID is skipped rather than encoded: a QR pointing at an
+   * unresolvable address sends the customer in circles, and printing nothing
+   * makes the misconfiguration visible.
+   */
+  private async buildPaymentQr(invoice: {
+    invoiceNumber: string;
+    status: string;
+    amountDue: Prisma.Decimal;
+    currencyCode: string;
+    company: { name: string; upiId: string | null };
+  }) {
+    const upiId = invoice.company.upiId?.trim();
+    if (!upiId || !isValidUpiId(upiId)) return null;
+    if (invoice.status === 'CANCELLED') return null;
+    if (invoice.amountDue.lessThanOrEqualTo(0)) return null;
+    // UPI settles in INR only. Encoding another currency would show a rupee
+    // figure for a bill denominated in something else.
+    if (invoice.currencyCode !== 'INR') return null;
+
+    const amount = invoice.amountDue.toFixed(4);
+    return {
+      qrDataUri: await renderUpiQrDataUri({
+        upiId,
+        payeeName: invoice.company.name,
+        amount,
+        reference: invoice.invoiceNumber,
+      }),
+      upiId,
+      amountDue: `${invoice.currencyCode} ${invoice.amountDue.toFixed(2)}`,
+    };
+  }
+
   private async loadOrganisation(tx: TenantClient, organisationId: string) {
     const org = await tx.organisation.findUniqueOrThrow({ where: { id: organisationId } });
     return {
@@ -457,7 +497,14 @@ export class PdfService implements OnModuleDestroy {
   ): Promise<TemplateData> {
     const invoice = await tx.invoice.findFirst({
       where: { id: invoiceId, organisationId },
-      include: { items: { orderBy: { position: 'asc' } }, customer: true },
+      include: {
+        items: { orderBy: { position: 'asc' } },
+        customer: true,
+        // The UPI ID belongs to the issuing company, not the organisation:
+        // two companies bank separately, and paying the wrong one is a real
+        // financial error rather than a cosmetic one.
+        company: { select: { name: true, upiId: true } },
+      },
     });
     if (!invoice) {
       throw notFound('INVOICE_NOT_FOUND', `Invoice ${invoiceId} not in org`);
@@ -487,6 +534,7 @@ export class PdfService implements OnModuleDestroy {
       },
       paymentMethod: invoice.paymentMethod ? PAYMENT_METHOD_LABELS[invoice.paymentMethod] : null,
       dispatchedThrough: invoice.dispatchedThrough,
+      payment: await this.buildPaymentQr(invoice),
       notes: invoice.notes,
       terms: invoice.terms,
       generatedAt: this.formatDate(new Date()),

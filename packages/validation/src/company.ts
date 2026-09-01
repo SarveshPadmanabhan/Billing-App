@@ -40,6 +40,21 @@ export const createCompanySchema = z.object({
   state: optionalTrimmed(100),
   postalCode: optionalTrimmed(30),
   countryCode: z.string().trim().toUpperCase().length(2).default('IN'),
+  /**
+   * UPI ID (VPA) this company collects into, e.g. "name@bank".
+   *
+   * Shape-checked only. The handle is not validated against a list of known
+   * providers — banks add handles regularly, and rejecting a valid-but-
+   * unrecognised one would block a legitimate payee.
+   */
+  upiId: z
+    .string()
+    .trim()
+    .regex(/^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z][a-zA-Z0-9.\-_]{1,64}$/, 'Enter a UPI ID like name@bank')
+    .max(255)
+    .optional()
+    .nullable()
+    .or(z.literal('').transform(() => null)),
   taxNumber: optionalTrimmed(100),
   currencyCode: z.string().trim().toUpperCase().length(3).default('INR'),
 
@@ -61,6 +76,21 @@ export const updateCompanySchema = z.object({
   state: optionalTrimmed(100),
   postalCode: optionalTrimmed(30),
   countryCode: z.string().trim().toUpperCase().length(2).optional(),
+  /**
+   * UPI ID (VPA) this company collects into, e.g. "name@bank".
+   *
+   * Shape-checked only. The handle is not validated against a list of known
+   * providers — banks add handles regularly, and rejecting a valid-but-
+   * unrecognised one would block a legitimate payee.
+   */
+  upiId: z
+    .string()
+    .trim()
+    .regex(/^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z][a-zA-Z0-9.\-_]{1,64}$/, 'Enter a UPI ID like name@bank')
+    .max(255)
+    .optional()
+    .nullable()
+    .or(z.literal('').transform(() => null)),
   taxNumber: optionalTrimmed(100),
   /**
    * currencyCode and the numbering prefixes are intentionally absent.

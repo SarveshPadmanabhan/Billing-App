@@ -24,6 +24,7 @@ interface CompanyForm {
   name: string;
   legalName: string;
   taxNumber: string;
+  upiId: string;
   email: string;
   phone: string;
   addressLine1: string;
@@ -39,6 +40,7 @@ const EMPTY: CompanyForm = {
   name: '',
   legalName: '',
   taxNumber: '',
+  upiId: '',
   email: '',
   phone: '',
   addressLine1: '',
@@ -86,6 +88,12 @@ export default function NewCompanyPage() {
     const next: Record<string, string> = {};
     if (!values.name.trim()) next.name = 'Company name is required';
 
+    // Money goes to whatever this resolves to, so a typo here is a real
+    // financial error. Shape is all that can be checked locally.
+    if (values.upiId.trim() && !/^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z][a-zA-Z0-9.\-_]{1,64}$/.test(values.upiId.trim())) {
+      next.upiId = 'Enter a UPI ID like name@bank';
+    }
+
     const invoice = prefixError('Invoice', values.invoicePrefix);
     if (invoice) next.invoicePrefix = invoice;
     const quotation = prefixError('Quotation', values.quotationPrefix);
@@ -125,6 +133,7 @@ export default function NewCompanyPage() {
           name: values.name,
           legalName: values.legalName || null,
           taxNumber: values.taxNumber || null,
+          upiId: values.upiId.trim() || null,
           email: values.email || null,
           phone: values.phone || null,
           addressLine1: values.addressLine1 || null,
@@ -206,6 +215,23 @@ export default function NewCompanyPage() {
               id="taxNumber"
               value={values.taxNumber}
               onChange={(e) => setField('taxNumber', e.target.value)}
+            />
+          </Field>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field
+            label="UPI ID"
+            htmlFor="upiId"
+            error={errors.upiId}
+            hint="Prints a scannable payment QR on this company's invoices."
+          >
+            <Input
+              id="upiId"
+              value={values.upiId}
+              invalid={Boolean(errors.upiId)}
+              placeholder="name@bank"
+              onChange={(e) => setField('upiId', e.target.value)}
             />
           </Field>
         </div>
