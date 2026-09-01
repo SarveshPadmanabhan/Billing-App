@@ -108,8 +108,35 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <main className="flex min-h-screen items-center justify-end bg-canvas px-4 sm:px-10">
-      <div className="w-full max-w-[400px] rounded-md border border-border bg-surface p-6 shadow-card">
+    <main className="relative flex min-h-screen items-center justify-end overflow-hidden bg-canvas px-4 sm:px-10">
+      {/*
+        Full-bleed background. Plain <img> rather than next/image: this is a
+        single decorative image with no layout to shift, and it must cover the
+        viewport at any aspect ratio, which object-cover does directly.
+
+        aria-hidden and empty alt — it carries no information a screen reader
+        needs, and announcing it would only delay reaching the form.
+
+        The gradient below it is a fallback, not decoration: if the file is
+        ever missing the card still lands on a solid surface instead of white
+        text on white.
+      */}
+      <div aria-hidden="true" className="absolute inset-0 -z-10 bg-gradient-to-br from-[#1E293B] via-[#334155] to-[#0F172A]">
+        <img
+          src="/login-background.jpg"
+          alt=""
+          className="h-full w-full object-cover"
+        />
+        {/*
+          Scrim. The card is opaque, but on a busy photograph a hard-edged
+          white panel reads as pasted on; this darkens the image enough to sit
+          it in the scene, and guarantees contrast if the image is ever
+          replaced with a lighter one.
+        */}
+        <div className="absolute inset-0 bg-ink/30" />
+      </div>
+
+      <div className="w-full max-w-[400px] rounded-lg border border-white/10 bg-surface p-6 shadow-modal">
         <h1 className="text-h2 text-ink">Sign in</h1>
         <p className="mt-1 text-body text-ink-muted">Access your billing workspace.</p>
         <Suspense
