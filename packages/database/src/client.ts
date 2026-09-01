@@ -10,6 +10,18 @@ export * from '@prisma/client';
  * BYPASSRLS — so every RLS policy applies. Migrations use a different role via
  * DATABASE_MIGRATION_URL.
  */
+/**
+ * Interactive-transaction limits.
+ *
+ * 10s is comfortable against a local database, where a round trip costs ~1ms.
+ * Against a hosted database in another region each trip costs ~100ms, so a
+ * transaction doing many queries — or a concurrency test firing 64 at once —
+ * can exceed it without anything being wrong. Tunable rather than raised
+ * outright, since a long timeout also delays detecting a genuine stall.
+ */
+const DEFAULT_TX_TIMEOUT_MS = Number(process.env.DB_TX_TIMEOUT_MS ?? 10_000);
+const DEFAULT_TX_MAX_WAIT_MS = Number(process.env.DB_TX_MAX_WAIT_MS ?? 5_000);
+
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
 export function createPrismaClient(options?: { log?: Prisma.LogLevel[] }): PrismaClient {
@@ -81,8 +93,8 @@ export async function withTenant<T>(
       return fn(tx);
     },
     {
-      timeout: options?.timeout ?? 10_000,
-      maxWait: options?.maxWait ?? 5_000,
+      timeout: options?.timeout ?? DEFAULT_TX_TIMEOUT_MS,
+      maxWait: options?.maxWait ?? DEFAULT_TX_MAX_WAIT_MS,
       isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
     },
   );
@@ -113,8 +125,8 @@ export async function withUser<T>(
       return fn(tx);
     },
     {
-      timeout: options?.timeout ?? 10_000,
-      maxWait: options?.maxWait ?? 5_000,
+      timeout: options?.timeout ?? DEFAULT_TX_TIMEOUT_MS,
+      maxWait: options?.maxWait ?? DEFAULT_TX_MAX_WAIT_MS,
       isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
     },
   );

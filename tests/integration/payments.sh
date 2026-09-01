@@ -15,6 +15,15 @@
 # ---------------------------------------------------------------------------
 set -uo pipefail
 
+# Per-request timeout. 10s suits a local database; a hosted one in another
+# region needs far more — a simple list query measured 5-7s against Seoul,
+# so multi-query endpoints exceed 10s without anything being wrong.
+REQ_TIMEOUT="${REQ_TIMEOUT:-10}"
+
+# Seeded accounts may use a generated password when the database is shared or
+# hosted — see SEED_PASSWORD in prisma/seed.ts. Falls back to the local default.
+SEED_PASSWORD="${SEED_PASSWORD:-DevPassword123!}"
+
 BASE="${1:-http://localhost:4000/api/v1}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -43,11 +52,11 @@ B_JAR="$TMP/b.jar"
 
 setup_org() {
   local email="$1" jar="$2" name="$3"
-  curl -s -m 15 -c "$jar" -X POST "$BASE/auth/sign-up/email" -H 'Content-Type: application/json' \
+  curl -s -m "$REQ_TIMEOUT" -c "$jar" -X POST "$BASE/auth/sign-up/email" -H 'Content-Type: application/json' \
     -d "{\"email\":\"$email\",\"password\":\"CorrectHorseBattery1\",\"name\":\"P U\",\"firstName\":\"P\",\"lastName\":\"U\"}" -o /dev/null
-  curl -s -m 15 -c "$jar" -X POST "$BASE/auth/sign-in/email" -H 'Content-Type: application/json' \
+  curl -s -m "$REQ_TIMEOUT" -c "$jar" -X POST "$BASE/auth/sign-in/email" -H 'Content-Type: application/json' \
     -d "{\"email\":\"$email\",\"password\":\"CorrectHorseBattery1\"}" -o /dev/null
-  curl -s -m 15 -b "$jar" -c "$jar" -X POST "$BASE/organisations" -H 'Content-Type: application/json' \
+  curl -s -m "$REQ_TIMEOUT" -b "$jar" -c "$jar" -X POST "$BASE/organisations" -H 'Content-Type: application/json' \
     -d "{\"name\":\"$name\",\"currencyCode\":\"INR\",\"countryCode\":\"IN\"}" | jqp "['data']['id']"
 }
 
@@ -55,21 +64,21 @@ setup_org() {
 sent_invoice() {
   local jar="$1" customer="$2" price="$3" desc="${4:-Payable item}"
   local id
-  id=$(curl -s -m 15 -b "$jar" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
+  id=$(curl -s -m "$REQ_TIMEOUT" -b "$jar" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
     -d "{\"customerId\":\"$customer\",\"paymentMethod\":\"BANK_TRANSFER\",\"issueDate\":\"$TODAY\",
          \"items\":[{\"description\":\"$desc\",\"quantity\":\"1\",\"unitPrice\":\"$price\",\"taxRate\":\"0\"}]}" \
     | jqp "['data']['id']")
-  curl -s -m 60 -b "$jar" -X POST "$BASE/invoices/$id/send" -o /dev/null
+  curl -s -m "$REQ_TIMEOUT" -b "$jar" -X POST "$BASE/invoices/$id/send" -o /dev/null
   printf '%s' "$id"
 }
 
 pay() {
   local jar="$1" invoice="$2" amount="$3" key="$4"
-  curl -s -m 30 -b "$jar" -X POST "$BASE/invoices/$invoice/payments" -H 'Content-Type: application/json' \
+  curl -s -m "$REQ_TIMEOUT" -b "$jar" -X POST "$BASE/invoices/$invoice/payments" -H 'Content-Type: application/json' \
     -d "{\"amount\":\"$amount\",\"paymentDate\":\"$TODAY\",\"paymentMethod\":\"BANK_TRANSFER\",\"idempotencyKey\":\"$key\"}"
 }
 
-invoice_field() { curl -s -m 10 -b "$1" "$BASE/invoices/$2" | jqp "['data']['$3']"; }
+invoice_field() { curl -s -m "$REQ_TIMEOUT" -b "$1" "$BASE/invoices/$2" | jqp "['data']['$3']"; }
 
 echo
 echo "EPIC 5 — Payments"
@@ -77,7 +86,7 @@ echo
 
 A_ORG=$(setup_org "pay-a-$STAMP@test.local" "$A_JAR" "Pay Org A")
 B_ORG=$(setup_org "pay-b-$STAMP@test.local" "$B_JAR" "Pay Org B")
-A_CUST=$(curl -s -m 10 -b "$A_JAR" -X POST "$BASE/customers" -H 'Content-Type: application/json' \
+A_CUST=$(curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" -X POST "$BASE/customers" -H 'Content-Type: application/json' \
   -d '{"customerType":"COMPANY","companyName":"Paying Client","billing":{"addressLine1":"1 High St","city":"Pune","state":"Maharashtra","postalCode":"411001","countryCode":"IN"}}' | jqp "['data']['id']")
 for pair in "A_ORG:$A_ORG" "B_ORG:$B_ORG" "A_CUST:$A_CUST"; do
   is_uuid "${pair#*:}" || { echo "  fixture setup failed: ${pair%%:*}='${pair#*:}'"; exit 1; }
@@ -110,16 +119,16 @@ check "VALIDATION_ERROR" "$(pay "$A_JAR" "$INV" "999999" "key-over-$STAMP" | jqp
   "Overpayment rejected"
 
 FUTURE=$(python3 -c "import datetime;print((datetime.date.today()+datetime.timedelta(days=5)).isoformat())")
-FUT_BODY=$(curl -s -m 20 -b "$A_JAR" -X POST "$BASE/invoices/$INV/payments" -H 'Content-Type: application/json' \
+FUT_BODY=$(curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" -X POST "$BASE/invoices/$INV/payments" -H 'Content-Type: application/json' \
   -d "{\"amount\":\"100\",\"paymentDate\":\"${FUTURE}\",\"paymentMethod\":\"CASH\",\"idempotencyKey\":\"key-fut-$STAMP\"}")
 check "VALIDATION_ERROR" "$(printf '%s' "$FUT_BODY" | jqp "['error']['code']")" "Future-dated payment rejected"
 
-NOKEY=$(curl -s -m 20 -b "$A_JAR" -X POST "$BASE/invoices/$INV/payments" -H 'Content-Type: application/json' \
+NOKEY=$(curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" -X POST "$BASE/invoices/$INV/payments" -H 'Content-Type: application/json' \
   -d "{\"amount\":\"100\",\"paymentDate\":\"$TODAY\",\"paymentMethod\":\"CASH\"}")
 check "VALIDATION_ERROR" "$(printf '%s' "$NOKEY" | jqp "['error']['code']")" "Missing idempotency key rejected"
 
 # A draft invoice cannot receive payment — it was never issued.
-DRAFT=$(curl -s -m 15 -b "$A_JAR" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
+DRAFT=$(curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
   -d "{\"customerId\":\"$A_CUST\",\"paymentMethod\":\"BANK_TRANSFER\",\"issueDate\":\"$TODAY\",\"items\":[{\"description\":\"Draft\",\"quantity\":\"1\",\"unitPrice\":\"100\"}]}" \
   | jqp "['data']['id']")
 check "INVALID_STATUS_TRANSITION" "$(pay "$A_JAR" "$DRAFT" "50" "key-draft-$STAMP" | jqp "['error']['code']")" \
@@ -187,10 +196,10 @@ VINV=$(sent_invoice "$A_JAR" "$A_CUST" "2000" "Void target")
 VPAY=$(pay "$A_JAR" "$VINV" "800" "void-one-$STAMP" | jqp "['data']['payment']['id']")
 check "1200" "$(invoice_field "$A_JAR" "$VINV" amountDue)" "Balance reduced before the void"
 
-check "VALIDATION_ERROR" "$(curl -s -m 20 -b "$A_JAR" -X POST "$BASE/payments/$VPAY/void" \
+check "VALIDATION_ERROR" "$(curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" -X POST "$BASE/payments/$VPAY/void" \
   -H 'Content-Type: application/json' -d '{}' | jqp "['error']['code']")" "Void requires a reason"
 
-VOIDED=$(curl -s -m 20 -b "$A_JAR" -X POST "$BASE/payments/$VPAY/void" \
+VOIDED=$(curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" -X POST "$BASE/payments/$VPAY/void" \
   -H 'Content-Type: application/json' -d '{"reason":"Cheque bounced"}')
 check "VOIDED" "$(printf '%s' "$VOIDED" | jqp "['data']['payment']['status']")" "Payment marked VOIDED"
 check "2000" "$(invoice_field "$A_JAR" "$VINV" amountDue)" "Void restores the invoice balance"
@@ -198,9 +207,9 @@ check "0" "$(invoice_field "$A_JAR" "$VINV" amountPaid)" "Void clears amountPaid
 check "SENT" "$(invoice_field "$A_JAR" "$VINV" status)" "Invoice returns to SENT"
 
 # The payment row survives — voided, not deleted.
-check "VOIDED" "$(curl -s -m 10 -b "$A_JAR" "$BASE/payments/$VPAY" | jqp "['data']['status']")" \
+check "VOIDED" "$(curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" "$BASE/payments/$VPAY" | jqp "['data']['status']")" \
   "Voided payment is retained, not deleted"
-DELETE_CODE=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -b "$A_JAR" -X DELETE "$BASE/payments/$VPAY")
+DELETE_CODE=$(curl -s -m "$REQ_TIMEOUT" -o /dev/null -w '%{http_code}' -b "$A_JAR" -X DELETE "$BASE/payments/$VPAY")
 if [ "$DELETE_CODE" = "404" ] || [ "$DELETE_CODE" = "405" ]; then
   pass "No DELETE endpoint for payments (HTTP $DELETE_CODE)"
 else
@@ -215,7 +224,7 @@ DINV=$(sent_invoice "$A_JAR" "$A_CUST" "3000" "Double void target")
 DPAY=$(pay "$A_JAR" "$DINV" "1200" "dvoid-$STAMP" | jqp "['data']['payment']['id']")
 
 for i in 1 2 3 4; do
-  curl -s -m 25 -b "$A_JAR" -X POST "$BASE/payments/$DPAY/void" \
+  curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" -X POST "$BASE/payments/$DPAY/void" \
     -H 'Content-Type: application/json' -d '{"reason":"Simultaneous void '"$i"'"}' > "$TMP/v_$i.json" &
 done
 wait
@@ -241,7 +250,7 @@ RINV=$(sent_invoice "$A_JAR" "$A_CUST" "5000" "Race target")
 RPAY=$(pay "$A_JAR" "$RINV" "2000" "race-first-$STAMP" | jqp "['data']['payment']['id']")
 
 # Fire both at once: void the existing 2000 payment while recording a new 1500.
-curl -s -m 25 -b "$A_JAR" -X POST "$BASE/payments/$RPAY/void" \
+curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" -X POST "$BASE/payments/$RPAY/void" \
   -H 'Content-Type: application/json' -d '{"reason":"Race void"}' > "$TMP/race_void.json" &
 pay "$A_JAR" "$RINV" "1500" "race-new-$STAMP" > "$TMP/race_pay.json" &
 wait
@@ -274,7 +283,7 @@ check "$EXPECTED" "$PAID_NOW" "amountPaid matches the surviving RECORDED payment
 check "$(python3 -c "print(5000-int('$EXPECTED'))")" "$DUE" "Balance is consistent regardless of which won"
 
 # And the ledger must agree with the stored figure.
-LEDGER=$(curl -s -m 10 -b "$A_JAR" "$BASE/invoices/$RINV" | python3 -c "
+LEDGER=$(curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" "$BASE/invoices/$RINV" | python3 -c "
 import sys,json
 d=json.load(sys.stdin)['data']
 total=sum(float(a['allocatedAmount']) for a in d['allocations'] if a['payment']['status']=='RECORDED')
@@ -286,45 +295,45 @@ echo
 echo "9. BILLING scoped permissions (Security Doc §12)"
 
 BILL_JAR="$TMP/billing.jar"
-curl -s -m 15 -c "$BILL_JAR" -X POST "$BASE/auth/sign-in/email" -H 'Content-Type: application/json' \
-  -d '{"email":"billing@acme.test","password":"DevPassword123!"}' -o /dev/null
-curl -s -m 10 -b "$BILL_JAR" -c "$BILL_JAR" -X POST "$BASE/auth/switch-organisation" \
+curl -s -m "$REQ_TIMEOUT" -c "$BILL_JAR" -X POST "$BASE/auth/sign-in/email" -H 'Content-Type: application/json' \
+  -d '{"email":"billing@acme.test","password":"'"$SEED_PASSWORD"'"}' -o /dev/null
+curl -s -m "$REQ_TIMEOUT" -b "$BILL_JAR" -c "$BILL_JAR" -X POST "$BASE/auth/switch-organisation" \
   -H 'Content-Type: application/json' -d '{"organisationId":"11111111-1111-1111-1111-111111111111"}' -o /dev/null
 
-SEED_CUST=$(curl -s -m 10 -b "$BILL_JAR" "$BASE/customers?limit=1" | jqp "['data']['items'][0]['id']")
+SEED_CUST=$(curl -s -m "$REQ_TIMEOUT" -b "$BILL_JAR" "$BASE/customers?limit=1" | jqp "['data']['items'][0]['id']")
 if is_uuid "$SEED_CUST"; then
   # Closes out the case deferred from EPIC 4: BILLING must not cancel a PAID
   # invoice, which needed a recorded payment to reach through the API.
   BPAID=$(sent_invoice "$BILL_JAR" "$SEED_CUST" "700" "Billing paid invoice")
   pay "$BILL_JAR" "$BPAID" "700" "bill-paid-$STAMP" > /dev/null
   check "PAID" "$(invoice_field "$BILL_JAR" "$BPAID" status)" "BILLING can settle an invoice"
-  check "FORBIDDEN" "$(curl -s -m 20 -b "$BILL_JAR" -X POST "$BASE/invoices/$BPAID/cancel" \
+  check "FORBIDDEN" "$(curl -s -m "$REQ_TIMEOUT" -b "$BILL_JAR" -X POST "$BASE/invoices/$BPAID/cancel" \
     -H 'Content-Type: application/json' -d '{"reason":"Should be refused"}' | jqp "['error']['code']")" \
     "BILLING cannot cancel a PAID invoice"
 
   # OWNER may, because the §12 restriction applies only to BILLING.
   OWNER_JAR="$TMP/owner.jar"
-  curl -s -m 15 -c "$OWNER_JAR" -X POST "$BASE/auth/sign-in/email" -H 'Content-Type: application/json' \
-    -d '{"email":"owner@acme.test","password":"DevPassword123!"}' -o /dev/null
-  curl -s -m 10 -b "$OWNER_JAR" -c "$OWNER_JAR" -X POST "$BASE/auth/switch-organisation" \
+  curl -s -m "$REQ_TIMEOUT" -c "$OWNER_JAR" -X POST "$BASE/auth/sign-in/email" -H 'Content-Type: application/json' \
+    -d '{"email":"owner@acme.test","password":"'"$SEED_PASSWORD"'"}' -o /dev/null
+  curl -s -m "$REQ_TIMEOUT" -b "$OWNER_JAR" -c "$OWNER_JAR" -X POST "$BASE/auth/switch-organisation" \
     -H 'Content-Type: application/json' -d '{"organisationId":"11111111-1111-1111-1111-111111111111"}' -o /dev/null
 
   # Even OWNER must void the payments first — money cannot be orphaned.
-  check "INVALID_STATUS_TRANSITION" "$(curl -s -m 20 -b "$OWNER_JAR" -X POST "$BASE/invoices/$BPAID/cancel" \
+  check "INVALID_STATUS_TRANSITION" "$(curl -s -m "$REQ_TIMEOUT" -b "$OWNER_JAR" -X POST "$BASE/invoices/$BPAID/cancel" \
     -H 'Content-Type: application/json' -d '{"reason":"Owner attempt with payments attached"}' | jqp "['error']['code']")" \
     "Even OWNER cannot cancel an invoice holding payments"
 
   # BILLING may void a payment it recorded.
   BVINV=$(sent_invoice "$BILL_JAR" "$SEED_CUST" "400" "Billing void own")
   BVPAY=$(pay "$BILL_JAR" "$BVINV" "400" "bill-void-$STAMP" | jqp "['data']['payment']['id']")
-  check "VOIDED" "$(curl -s -m 20 -b "$BILL_JAR" -X POST "$BASE/payments/$BVPAY/void" \
+  check "VOIDED" "$(curl -s -m "$REQ_TIMEOUT" -b "$BILL_JAR" -X POST "$BASE/payments/$BVPAY/void" \
     -H 'Content-Type: application/json' -d '{"reason":"Billing voids its own payment"}' | jqp "['data']['payment']['status']")" \
     "BILLING may void a payment it recorded"
 
   # But not one recorded by someone else.
   OINV=$(sent_invoice "$OWNER_JAR" "$SEED_CUST" "600" "Owner recorded")
   OPAY=$(pay "$OWNER_JAR" "$OINV" "600" "owner-pay-$STAMP" | jqp "['data']['payment']['id']")
-  check "FORBIDDEN" "$(curl -s -m 20 -b "$BILL_JAR" -X POST "$BASE/payments/$OPAY/void" \
+  check "FORBIDDEN" "$(curl -s -m "$REQ_TIMEOUT" -b "$BILL_JAR" -X POST "$BASE/payments/$OPAY/void" \
     -H 'Content-Type: application/json' -d '{"reason":"Billing voids someone else"}' | jqp "['error']['code']")" \
     "BILLING cannot void another user's payment"
 else
@@ -335,11 +344,11 @@ echo
 # --- Tenant isolation -------------------------------------------------------------------------
 echo "10. Tenant isolation"
 
-check "0" "$(curl -s -m 10 -b "$B_JAR" "$BASE/payments" | jqp "['data']['total']")" \
+check "0" "$(curl -s -m "$REQ_TIMEOUT" -b "$B_JAR" "$BASE/payments" | jqp "['data']['total']")" \
   "Org B sees none of Org A's payments"
-check "PAYMENT_NOT_FOUND" "$(curl -s -m 10 -b "$B_JAR" "$BASE/payments/$VPAY" | jqp "['error']['code']")" \
+check "PAYMENT_NOT_FOUND" "$(curl -s -m "$REQ_TIMEOUT" -b "$B_JAR" "$BASE/payments/$VPAY" | jqp "['error']['code']")" \
   "Org B cannot read Org A's payment"
-check "PAYMENT_NOT_FOUND" "$(curl -s -m 20 -b "$B_JAR" -X POST "$BASE/payments/$VPAY/void" \
+check "PAYMENT_NOT_FOUND" "$(curl -s -m "$REQ_TIMEOUT" -b "$B_JAR" -X POST "$BASE/payments/$VPAY/void" \
   -H 'Content-Type: application/json' -d '{"reason":"x"}' | jqp "['error']['code']")" \
   "Org B cannot void Org A's payment"
 check "INVOICE_NOT_FOUND" "$(pay "$B_JAR" "$INV" "10" "cross-$STAMP" | jqp "['error']['code']")" \

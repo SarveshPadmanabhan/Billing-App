@@ -11,6 +11,15 @@
 # ---------------------------------------------------------------------------
 set -uo pipefail
 
+# Per-request timeout. 10s suits a local database; a hosted one in another
+# region needs far more — a simple list query measured 5-7s against Seoul,
+# so multi-query endpoints exceed 10s without anything being wrong.
+REQ_TIMEOUT="${REQ_TIMEOUT:-10}"
+
+# Seeded accounts may use a generated password when the database is shared or
+# hosted — see SEED_PASSWORD in prisma/seed.ts. Falls back to the local default.
+SEED_PASSWORD="${SEED_PASSWORD:-DevPassword123!}"
+
 BASE="${1:-http://localhost:4000/api/v1}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -35,7 +44,7 @@ try: print(eval(expr,{'d':d,'len':len,'all':all,'any':any,'set':set}))
 except Exception: print('')" "$1" 2>/dev/null; }
 
 is_uuid() { printf '%s' "$1" | grep -Eq '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'; }
-code() { curl -s -m 20 -o /dev/null -w '%{http_code}' "$@"; }
+code() { curl -s -m "$REQ_TIMEOUT" -o /dev/null -w '%{http_code}' "$@"; }
 
 PSQL() { psql -h localhost -d billing_dev -tAc "$1" 2>&1; }
 export PATH="/opt/homebrew/opt/postgresql@16/bin:$PATH"
@@ -44,26 +53,26 @@ A_JAR="$TMP/a.jar"; B_JAR="$TMP/b.jar"
 
 setup_org() {
   local email="$1" jar="$2" name="$3"
-  curl -s -m 15 -c "$jar" -X POST "$BASE/auth/sign-up/email" -H 'Content-Type: application/json' \
+  curl -s -m "$REQ_TIMEOUT" -c "$jar" -X POST "$BASE/auth/sign-up/email" -H 'Content-Type: application/json' \
     -d "{\"email\":\"$email\",\"password\":\"CorrectHorseBattery1\",\"name\":\"A U\",\"firstName\":\"A\",\"lastName\":\"U\"}" -o /dev/null
-  curl -s -m 15 -c "$jar" -X POST "$BASE/auth/sign-in/email" -H 'Content-Type: application/json' \
+  curl -s -m "$REQ_TIMEOUT" -c "$jar" -X POST "$BASE/auth/sign-in/email" -H 'Content-Type: application/json' \
     -d "{\"email\":\"$email\",\"password\":\"CorrectHorseBattery1\"}" -o /dev/null
-  curl -s -m 15 -b "$jar" -c "$jar" -X POST "$BASE/organisations" -H 'Content-Type: application/json' \
+  curl -s -m "$REQ_TIMEOUT" -b "$jar" -c "$jar" -X POST "$BASE/organisations" -H 'Content-Type: application/json' \
     -d "{\"name\":\"$name\",\"currencyCode\":\"INR\",\"countryCode\":\"IN\"}" | jqp "['data']['id']"
 }
 
 A_ORG=$(setup_org "acc-a-$STAMP@test.local" "$A_JAR" "Acceptance Org A")
 B_ORG=$(setup_org "acc-b-$STAMP@test.local" "$B_JAR" "Acceptance Org B")
-A_CUST=$(curl -s -m 10 -b "$A_JAR" -X POST "$BASE/customers" -H 'Content-Type: application/json' \
+A_CUST=$(curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" -X POST "$BASE/customers" -H 'Content-Type: application/json' \
   -d '{"customerType":"COMPANY","companyName":"Acceptance Client","billing":{"addressLine1":"1 High St","city":"Pune","state":"Maharashtra","postalCode":"411001","countryCode":"IN"}}' | jqp "['data']['id']")
 is_uuid "$A_ORG" && is_uuid "$A_CUST" || { echo "fixture setup failed"; exit 1; }
 
 # A sent invoice with a payment, reused across several checks.
-INV=$(curl -s -m 15 -b "$A_JAR" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
+INV=$(curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
   -d "{\"customerId\":\"$A_CUST\",\"paymentMethod\":\"BANK_TRANSFER\",\"issueDate\":\"$TODAY\",
        \"items\":[{\"description\":\"Audit item\",\"quantity\":\"2\",\"unitPrice\":\"5000\",\"taxRate\":\"18\"}]}" \
   | jqp "['data']['id']")
-curl -s -m 60 -b "$A_JAR" -X POST "$BASE/invoices/$INV/send" -o /dev/null
+curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" -X POST "$BASE/invoices/$INV/send" -o /dev/null
 
 echo
 echo "Acceptance audit — TICKET-042 … 046"
@@ -130,12 +139,12 @@ echo "TICKET-043 — Accidental Deletion Protection"
 # ===========================================================================
 
 # Criterion: paid invoices cannot be deleted.
-PAID=$(curl -s -m 15 -b "$A_JAR" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
+PAID=$(curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
   -d "{\"customerId\":\"$A_CUST\",\"paymentMethod\":\"BANK_TRANSFER\",\"issueDate\":\"$TODAY\",
        \"items\":[{\"description\":\"Paid item\",\"quantity\":\"1\",\"unitPrice\":\"1000\",\"taxRate\":\"0\"}]}" \
   | jqp "['data']['id']")
-curl -s -m 60 -b "$A_JAR" -X POST "$BASE/invoices/$PAID/send" -o /dev/null
-curl -s -m 30 -b "$A_JAR" -X POST "$BASE/invoices/$PAID/payments" -H 'Content-Type: application/json' \
+curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" -X POST "$BASE/invoices/$PAID/send" -o /dev/null
+curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" -X POST "$BASE/invoices/$PAID/payments" -H 'Content-Type: application/json' \
   -d "{\"amount\":\"1000\",\"paymentDate\":\"$TODAY\",\"paymentMethod\":\"CASH\",\"idempotencyKey\":\"acc-$STAMP\"}" -o /dev/null
 
 DEL_CODE=$(code -b "$A_JAR" -X DELETE "$BASE/invoices/$PAID")
@@ -149,7 +158,7 @@ fi
 # it — the role-scoped permission (FORBIDDEN) and the payments-must-be-voided
 # rule (INVALID_STATUS_TRANSITION) — and which fires depends on the caller's
 # role. The criterion is that it is refused, so accept either.
-PAID_CANCEL=$(curl -s -m 20 -b "$A_JAR" -X POST "$BASE/invoices/$PAID/cancel" \
+PAID_CANCEL=$(curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" -X POST "$BASE/invoices/$PAID/cancel" \
   -H 'Content-Type: application/json' -d '{"reason":"attempt"}' | jqp "['error']['code']")
 case "$PAID_CANCEL" in
   FORBIDDEN|INVALID_STATUS_TRANSITION)
@@ -167,18 +176,18 @@ else
 fi
 
 # Criterion: cancelled invoices remain in history.
-CANC=$(curl -s -m 15 -b "$A_JAR" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
+CANC=$(curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" -X POST "$BASE/invoices" -H 'Content-Type: application/json' \
   -d "{\"customerId\":\"$A_CUST\",\"paymentMethod\":\"BANK_TRANSFER\",\"issueDate\":\"$TODAY\",
        \"items\":[{\"description\":\"Cancel me\",\"quantity\":\"1\",\"unitPrice\":\"900\",\"taxRate\":\"0\"}]}" \
   | jqp "['data']['id']")
-curl -s -m 20 -b "$A_JAR" -X POST "$BASE/invoices/$CANC/cancel" -H 'Content-Type: application/json' \
+curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" -X POST "$BASE/invoices/$CANC/cancel" -H 'Content-Type: application/json' \
   -d '{"reason":"Acceptance audit"}' -o /dev/null
-CANC_AFTER=$(curl -s -m 10 -b "$A_JAR" "$BASE/invoices/$CANC")
+CANC_AFTER=$(curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" "$BASE/invoices/$CANC")
 check "CANCELLED" "$(printf '%s' "$CANC_AFTER" | jqp "['data']['status']")" \
   "043.2 A cancelled invoice is still retrievable"
 CANC_NUM=$(printf '%s' "$CANC_AFTER" | jqp "['data']['invoiceNumber']")
 case "$CANC_NUM" in INV-*) pass "043.2 It keeps its number ($CANC_NUM)";; *) fail "043.2 Cancelled invoice keeps its number" "got '$CANC_NUM'";; esac
-check "1" "$(curl -s -m 10 -b "$A_JAR" "$BASE/invoices?status=CANCELLED" | jqp "['data']['total']")" \
+check "1" "$(curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" "$BASE/invoices?status=CANCELLED" | jqp "['data']['total']")" \
   "043.2 It still appears in listings"
 
 # Criterion: customer deletion does not destroy financial history.
@@ -196,22 +205,22 @@ else
   fail "043.3 Database refuses customer deletion" "succeeded: $DB_CUST_DEL"
 fi
 
-ARCH=$(curl -s -m 15 -b "$A_JAR" -X POST "$BASE/customers/$A_CUST/archive" \
+ARCH=$(curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" -X POST "$BASE/customers/$A_CUST/archive" \
   -H 'Content-Type: application/json' -d '{"confirm":true}')
 check "True" "$(printf '%s' "$ARCH" | jqp "['data']['isArchived']")" "043.3 Archiving is the supported path"
-check "$CANC_NUM" "$(curl -s -m 10 -b "$A_JAR" "$BASE/invoices/$CANC" | jqp "['data']['invoiceNumber']")" \
+check "$CANC_NUM" "$(curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" "$BASE/invoices/$CANC" | jqp "['data']['invoiceNumber']")" \
   "043.3 Documents survive the customer being archived"
-curl -s -m 15 -b "$A_JAR" -X POST "$BASE/customers/$A_CUST/restore" -o /dev/null
+curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" -X POST "$BASE/customers/$A_CUST/restore" -o /dev/null
 
 # Criterion: destructive actions require confirmation.
-check "VALIDATION_ERROR" "$(curl -s -m 15 -b "$A_JAR" -X POST "$BASE/customers/$A_CUST/archive" \
+check "VALIDATION_ERROR" "$(curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" -X POST "$BASE/customers/$A_CUST/archive" \
   -H 'Content-Type: application/json' -d '{}' | jqp "['error']['code']")" \
   "043.4 Archiving requires explicit confirmation"
-check "VALIDATION_ERROR" "$(curl -s -m 15 -b "$A_JAR" -X POST "$BASE/invoices/$INV/cancel" \
+check "VALIDATION_ERROR" "$(curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" -X POST "$BASE/invoices/$INV/cancel" \
   -H 'Content-Type: application/json' -d '{}' | jqp "['error']['code']")" \
   "043.4 Cancelling requires a reason"
-PAY_ID=$(curl -s -m 10 -b "$A_JAR" "$BASE/payments?limit=1" | jqp "['data']['items'][0]['id']")
-check "VALIDATION_ERROR" "$(curl -s -m 15 -b "$A_JAR" -X POST "$BASE/payments/$PAY_ID/void" \
+PAY_ID=$(curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" "$BASE/payments?limit=1" | jqp "['data']['items'][0]['id']")
+check "VALIDATION_ERROR" "$(curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" -X POST "$BASE/payments/$PAY_ID/void" \
   -H 'Content-Type: application/json' -d '{}' | jqp "['error']['code']")" \
   "043.4 Voiding requires a reason"
 echo
@@ -220,19 +229,19 @@ echo
 echo "TICKET-044 — Secure Document Access"
 # ===========================================================================
 
-PDF=$(curl -s -m 60 -b "$A_JAR" "$BASE/invoices/$INV/pdf")
+PDF=$(curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" "$BASE/invoices/$INV/pdf")
 PDF_URL=$(printf '%s' "$PDF" | jqp "['data']['url']")
 [ -n "$PDF_URL" ] && pass "044.0 An authorised request receives a signed URL" \
   || fail "044.0 Authorised PDF request" "$PDF"
 
 # Criterion: ownership is verified server-side.
-check "INVOICE_NOT_FOUND" "$(curl -s -m 30 -b "$B_JAR" "$BASE/invoices/$INV/pdf" | jqp "['error']['code']")" \
+check "INVOICE_NOT_FOUND" "$(curl -s -m "$REQ_TIMEOUT" -b "$B_JAR" "$BASE/invoices/$INV/pdf" | jqp "['error']['code']")" \
   "044.1 Another organisation cannot generate this PDF"
 check "401" "$(code "$BASE/invoices/$INV/pdf")" "044.1 Anonymous PDF requests are refused"
 
 # Criterion: guessing IDs cannot expose documents.
 RANDOM_ID=$(python3 -c 'import uuid;print(uuid.uuid4())')
-check "INVOICE_NOT_FOUND" "$(curl -s -m 20 -b "$B_JAR" "$BASE/invoices/$RANDOM_ID/pdf" | jqp "['error']['code']")" \
+check "INVOICE_NOT_FOUND" "$(curl -s -m "$REQ_TIMEOUT" -b "$B_JAR" "$BASE/invoices/$RANDOM_ID/pdf" | jqp "['error']['code']")" \
   "044.2 A guessed id returns the same error as a foreign one"
 
 # Criterion: private objects are not permanently public.
@@ -259,7 +268,7 @@ echo "TICKET-045 — API Validation & Error Handling"
 # ===========================================================================
 
 # Criterion: invalid input returns structured errors.
-BAD=$(curl -s -m 10 -b "$A_JAR" -X POST "$BASE/customers" -H 'Content-Type: application/json' \
+BAD=$(curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" -X POST "$BASE/customers" -H 'Content-Type: application/json' \
   -d '{"customerType":"COMPANY","email":"not-an-email"}')
 check "VALIDATION_ERROR" "$(printf '%s' "$BAD" | jqp "['error']['code']")" "045.1 Invalid input returns a structured error"
 HAS_FIELDS=$(printf '%s' "$BAD" | jqp "all('field' in x and 'message' in x for x in d['error']['details'])")
@@ -272,9 +281,9 @@ check "401" "$(code "$BASE/customers")" "045.2 Unauthenticated returns 401"
 
 # 403 needs a role that lacks the permission: VIEWER cannot create customers.
 V_JAR="$TMP/viewer.jar"
-curl -s -m 15 -c "$V_JAR" -X POST "$BASE/auth/sign-in/email" -H 'Content-Type: application/json' \
-  -d '{"email":"viewer@acme.test","password":"DevPassword123!"}' -o /dev/null
-curl -s -m 10 -b "$V_JAR" -c "$V_JAR" -X POST "$BASE/auth/switch-organisation" \
+curl -s -m "$REQ_TIMEOUT" -c "$V_JAR" -X POST "$BASE/auth/sign-in/email" -H 'Content-Type: application/json' \
+  -d '{"email":"viewer@acme.test","password":"'"$SEED_PASSWORD"'"}' -o /dev/null
+curl -s -m "$REQ_TIMEOUT" -b "$V_JAR" -c "$V_JAR" -X POST "$BASE/auth/switch-organisation" \
   -H 'Content-Type: application/json' -d '{"organisationId":"11111111-1111-1111-1111-111111111111"}' -o /dev/null
 check "403" "$(code -b "$V_JAR" -X POST "$BASE/customers" -H 'Content-Type: application/json' \
   -d '{"customerType":"COMPANY","companyName":"Denied"}')" "045.3 Unauthorised returns 403"
@@ -282,7 +291,7 @@ check "403" "$(code -b "$V_JAR" -X POST "$BASE/customers" -H 'Content-Type: appl
 check "404" "$(code -b "$A_JAR" "$BASE/customers/$RANDOM_ID")" "045.4 Missing resource returns 404"
 
 # Business-rule violation: sending an already-sent invoice.
-BR=$(curl -s -m 30 -b "$A_JAR" -X POST "$BASE/invoices/$INV/send")
+BR=$(curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" -X POST "$BASE/invoices/$INV/send")
 check "INVALID_STATUS_TRANSITION" "$(printf '%s' "$BR" | jqp "['error']['code']")" \
   "045.5 Business-rule violations return a specific code"
 check "409" "$(code -b "$A_JAR" -X POST "$BASE/invoices/$INV/send")" "045.5 …with a 4xx status (409)"
@@ -292,7 +301,7 @@ LEAKY=$(printf '%s' "$BAD $BR" | grep -icE "prisma|postgres|select |stack|at /Us
 check "0" "$LEAKY" "045.7 Error bodies leak no SQL, stack traces or paths"
 
 # A malformed body must not surface a parser error verbatim.
-MALFORMED=$(curl -s -m 10 -b "$A_JAR" -X POST "$BASE/customers" \
+MALFORMED=$(curl -s -m "$REQ_TIMEOUT" -b "$A_JAR" -X POST "$BASE/customers" \
   -H 'Content-Type: application/json' -d '{"companyName": ')
 MAL_LEAK=$(printf '%s' "$MALFORMED" | grep -icE "JSON at position|SyntaxError|node_modules" | awk '{s+=$1} END {print s+0}')
 check "0" "$MAL_LEAK" "045.6 Malformed JSON does not expose a parser stack"

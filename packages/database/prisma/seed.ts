@@ -43,7 +43,11 @@ async function main() {
 
   console.log('Seeding development data...\n');
 
-  const password = hashPassword('DevPassword123!');
+  // SEED_PASSWORD overrides the well-known development password. The default
+  // is printed in the README, so seeding a shared or hosted database with it
+  // would let anyone holding the repo sign in. Pass a generated value there.
+  const seedPassword = process.env.SEED_PASSWORD ?? 'DevPassword123!';
+  const password = hashPassword(seedPassword);
 
   // --- Organisation A -------------------------------------------------------
   const owner = await prisma.user.upsert({
@@ -154,11 +158,12 @@ async function main() {
 
   console.log('\nSeed complete.\n');
   console.log('  Organisation A — Acme Consulting');
-  console.log('    owner@acme.test    OWNER    DevPassword123!');
-  console.log('    billing@acme.test  BILLING  DevPassword123!');
-  console.log('    viewer@acme.test   VIEWER   DevPassword123!');
+  const shown = process.env.SEED_PASSWORD ? '(SEED_PASSWORD)' : seedPassword;
+  console.log(`    owner@acme.test    OWNER    ${shown}`);
+  console.log(`    billing@acme.test  BILLING  ${shown}`);
+  console.log(`    viewer@acme.test   VIEWER   ${shown}`);
   console.log('  Organisation B — Globex Corporation');
-  console.log('    owner@globex.test  OWNER    DevPassword123!');
+  console.log(`    owner@globex.test  OWNER    ${shown}`);
   console.log('\n  Org B exists so cross-tenant leaks show up in normal dev use.');
 }
 
@@ -488,7 +493,7 @@ async function seedDocuments(organisationId: string, companyId: string, userId: 
     console.log(
       `  documents: ${sequences.quotation} quotations, ${sequences.invoice} invoices, 2 payments`,
     );
-  });
+  }, { timeout: 60_000, maxWait: 15_000 });
 }
 
 interface SeedOrgInput {
@@ -608,7 +613,7 @@ async function seedOrganisation(input: SeedOrgInput) {
         },
       });
     }
-  });
+  }, { timeout: 60_000, maxWait: 15_000 });
 
   console.log(`  ${input.name}: ${input.members.length} member(s), ${input.customers.length} customer(s)`);
 }

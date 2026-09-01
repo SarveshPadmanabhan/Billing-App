@@ -23,9 +23,27 @@ DB_HOST="${DB_HOST:-localhost}"
 
 # An integrity audit must see every tenant, which billing_owner cannot do:
 # the tables use FORCE ROW LEVEL SECURITY, so even the owner is filtered and
-# `SET row_security = off` is refused. Connect as the local superuser instead
-# (BYPASSRLS), which is appropriate for an audit and only ever reads.
+# `SET row_security = off` is refused. Connect as a BYPASSRLS role instead,
+# which is appropriate for an audit and only ever reads.
 DB_SUPERUSER="${DB_SUPERUSER:-$(whoami)}"
+
+# Audit whatever DATABASE_MIGRATION_URL points at, so this follows the app to a
+# hosted database instead of silently auditing a stale local copy. That is not
+# hypothetical: after the move to Supabase this script reported 34/34 while
+# reading 120 organisations of old local test data.
+AUDIT_URL="${AUDIT_URL:-}"
+if [ -z "$AUDIT_URL" ] && [ -f "$(dirname "$0")/../../.env" ]; then
+  AUDIT_URL=$(grep -E "^DATABASE_MIGRATION_URL=" "$(dirname "$0")/../../.env" | head -1 | cut -d= -f2-)
+fi
+
+# psql takes either a URL or host/user/db flags; build the argument list once.
+if [ -n "$AUDIT_URL" ]; then
+  PSQL_TARGET=("$AUDIT_URL")
+  AUDIT_LABEL=$(printf '%s' "$AUDIT_URL" | sed -E 's|://([^:]+):[^@]*@|://\1:***@|')
+else
+  PSQL_TARGET=(-h "$DB_HOST" -U "$DB_SUPERUSER" -d "$DB_NAME")
+  AUDIT_LABEL="$DB_NAME on $DB_HOST as $DB_SUPERUSER"
+fi
 
 PASS=0
 FAIL=0
@@ -40,7 +58,7 @@ fail() { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; printf '        %s\n' "${2:-
 count_all() {
   local sql="$1"
   local out
-  out=$(psql -h "$DB_HOST" -U "$DB_SUPERUSER" -d "$DB_NAME" -tAc "$sql" 2>&1)
+  out=$(psql "${PSQL_TARGET[@]}" -tAc "$sql" 2>&1)
 
   if ! printf '%s' "$out" | grep -qE '^[[:space:]]*[0-9]+[[:space:]]*$'; then
     printf 'QUERY_ERROR: %s' "$(printf '%s' "$out" | head -2 | tr '\n' ' ')"
@@ -53,7 +71,7 @@ count_all() {
 ORG_COUNT=$(count_all "SELECT count(*) FROM organisations;")
 case "$ORG_COUNT" in
   QUERY_ERROR*|0)
-    echo "  Cannot read the database as '$DB_SUPERUSER' ($ORG_COUNT)."
+    echo "  Cannot read $AUDIT_LABEL ($ORG_COUNT)."
     echo "  An audit that cannot see rows would report zero violations and be worthless."
     exit 1
     ;;
@@ -70,7 +88,7 @@ expect_zero() {
 
 echo
 echo "Financial integrity"
-echo "  auditing $ORG_COUNT organisation(s) as $DB_SUPERUSER"
+echo "  auditing $ORG_COUNT organisation(s) in $AUDIT_LABEL"
 echo
 
 # --- Balances -------------------------------------------------------------------

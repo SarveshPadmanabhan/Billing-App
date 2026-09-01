@@ -9,7 +9,7 @@ import { test, expect, type Page, type ConsoleMessage } from '@playwright/test';
  * that API-only tests passed straight through.
  */
 
-const SEED_OWNER = { email: 'owner@acme.test', password: 'DevPassword123!' };
+const SEED_OWNER = { email: 'owner@acme.test', password: (process.env.SEED_PASSWORD ?? 'DevPassword123!') };
 const SEED_ORG_ID = '11111111-1111-1111-1111-111111111111';
 const API_URL = process.env.E2E_API_URL ?? 'http://localhost:4000';
 
