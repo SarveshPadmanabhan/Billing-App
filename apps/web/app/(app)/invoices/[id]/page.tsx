@@ -288,6 +288,12 @@ export default function InvoiceDetailPage() {
             <Detail label="Customer" value={customerName(invoice.customer)} />
             <Detail label="Invoice date" value={formatDate(invoice.issueDate)} />
             <Detail label="Due date" value={formatDate(invoice.dueDate)} />
+            {invoice.paymentMethod && (
+              <Detail label="Mode of payment" value={paymentMethodLabel(invoice.paymentMethod)} />
+            )}
+            {invoice.dispatchedThrough && (
+              <Detail label="Dispatched through" value={invoice.dispatchedThrough} />
+            )}
             {invoice.sentAt && <Detail label="Sent" value={formatDate(invoice.sentAt)} />}
             {invoice.paidAt && <Detail label="Paid" value={formatDate(invoice.paidAt)} />}
           </dl>

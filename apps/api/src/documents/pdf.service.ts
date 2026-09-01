@@ -45,6 +45,16 @@ export interface GeneratedPdf {
   renderMs: number;
 }
 
+/** Enum values are not what a customer should read on a document. */
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  CASH: 'Cash',
+  BANK_TRANSFER: 'Bank transfer',
+  CARD: 'Card',
+  CHEQUE: 'Cheque',
+  UPI: 'UPI',
+  OTHER: 'Other',
+};
+
 @Injectable()
 export class PdfService implements OnModuleDestroy {
   /** One browser reused across requests; launching costs ~300ms each time. */
@@ -475,6 +485,8 @@ export class PdfService implements OnModuleDestroy {
         amountPaid: invoice.amountPaid.toFixed(4),
         amountDue: invoice.amountDue.toFixed(4),
       },
+      paymentMethod: invoice.paymentMethod ? PAYMENT_METHOD_LABELS[invoice.paymentMethod] : null,
+      dispatchedThrough: invoice.dispatchedThrough,
       notes: invoice.notes,
       terms: invoice.terms,
       generatedAt: this.formatDate(new Date()),

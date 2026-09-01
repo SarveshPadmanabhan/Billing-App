@@ -25,6 +25,7 @@ export interface Invoice {
   organisationId: string;
   customerId: string;
   paymentMethod: string | null;
+  dispatchedThrough: string | null;
   quotationId: string | null;
   invoiceNumber: string;
   issueDate: string;
@@ -99,6 +100,8 @@ export interface InvoiceFormValues {
   customerId: string;
   /** Required on invoices: how the customer is expected to pay. */
   paymentMethod: string;
+  /** Free text: carrier, vehicle number, or "collected in person". */
+  dispatchedThrough: string;
   issueDate: string;
   dueDate: string;
   items: LineItemDraft[];
@@ -111,6 +114,7 @@ function toPayload(values: InvoiceFormValues) {
   return {
     customerId: values.customerId,
     paymentMethod: values.paymentMethod,
+    dispatchedThrough: values.dispatchedThrough.trim() || null,
     issueDate: values.issueDate,
     dueDate: values.dueDate || null,
     items: values.items.map((item) => ({
@@ -218,6 +222,7 @@ export function emptyInvoiceForm(defaultTaxRate = '0', paymentTermsDays = 30): I
     // Blank rather than a guess: the user must state how the invoice is paid,
     // and pre-selecting CASH would record a choice nobody made.
     paymentMethod: '',
+    dispatchedThrough: '',
     discountRate: '',
     notes: '',
     terms: '',
@@ -233,6 +238,7 @@ export function invoiceToForm(invoice: InvoiceDetail): InvoiceFormValues {
     // Invoices predating this field have none; the form shows it unset and the
     // user must choose before saving rather than inheriting a fabricated value.
     paymentMethod: invoice.paymentMethod ?? '',
+    dispatchedThrough: invoice.dispatchedThrough ?? '',
     issueDate: invoice.issueDate.slice(0, 10),
     dueDate: invoice.dueDate.slice(0, 10),
     items: invoice.items.map((item) => ({

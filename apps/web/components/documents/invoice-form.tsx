@@ -198,6 +198,25 @@ export function InvoiceForm({
             </Select>
           </Field>
         </div>
+
+        <div className="max-w-[420px]">
+          <Field
+            label="Dispatched through"
+            htmlFor="dispatchedThrough"
+            error={errors.dispatchedThrough}
+            hint="Carrier, vehicle number, or how the goods were sent. Optional."
+          >
+            <Input
+              id="dispatchedThrough"
+              value={values.dispatchedThrough}
+              invalid={Boolean(errors.dispatchedThrough)}
+              maxLength={255}
+              placeholder="e.g. Blue Dart, TN-01-AB-1234, collected in person"
+              onChange={(e) => set('dispatchedThrough', e.target.value)}
+            />
+          </Field>
+        </div>
+
         <TotalsSummary items={values.items} documentDiscountRate="" currency={currency} />
       </Card>
 

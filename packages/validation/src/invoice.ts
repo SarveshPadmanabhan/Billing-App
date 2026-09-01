@@ -51,6 +51,9 @@ const documentDiscountSchema = z
 export const createInvoiceSchema = z
   .object({
     customerId: uuidSchema,
+    /** Free text: carrier, vehicle number, or "collected in person". */
+    dispatchedThrough: z.string().trim().max(255).optional().nullable()
+      .transform((v) => (v === '' ? null : v)),
     /** Required on new invoices: how the customer is expected to pay. */
     paymentMethod: z.enum(PAYMENT_METHODS, {
       errorMap: () => ({ message: 'Select a mode of payment' }),
@@ -76,6 +79,9 @@ export const createInvoiceSchema = z
 export const updateInvoiceSchema = z
   .object({
     customerId: uuidSchema.optional(),
+    /** Free text: carrier, vehicle number, or "collected in person". */
+    dispatchedThrough: z.string().trim().max(255).optional().nullable()
+      .transform((v) => (v === '' ? null : v)),
     /**
      * Optional on update. This is a partial update, and the invoices that
      * predate the field have none — requiring one here would block editing

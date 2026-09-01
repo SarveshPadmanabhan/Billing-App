@@ -37,6 +37,7 @@ const INVOICE_SELECT = {
   organisationId: true,
   customerId: true,
   paymentMethod: true,
+  dispatchedThrough: true,
   quotationId: true,
   invoiceNumber: true,
   issueDate: true,
@@ -258,6 +259,7 @@ export class InvoicesService {
             companyId: org.companyId,
             customerId: customer.id,
             paymentMethod: input.paymentMethod,
+            dispatchedThrough: input.dispatchedThrough ?? null,
             invoiceNumber: number.formatted,
             issueDate,
             dueDate,
@@ -405,6 +407,9 @@ export class InvoicesService {
           data: {
             ...(input.customerId && { customerId: input.customerId }),
             ...(input.paymentMethod !== undefined && { paymentMethod: input.paymentMethod }),
+            ...(input.dispatchedThrough !== undefined && {
+              dispatchedThrough: input.dispatchedThrough,
+            }),
             issueDate,
             dueDate,
             ...(input.notes !== undefined && { notes: input.notes }),

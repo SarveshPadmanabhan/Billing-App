@@ -76,6 +76,10 @@ export interface TemplateData {
     amountDue?: string;
   };
 
+  /** Invoices only. Shown in the meta block when present. */
+  paymentMethod?: string | null;
+  dispatchedThrough?: string | null;
+
   notes: string | null;
   terms: string | null;
   generatedAt: string;
@@ -287,6 +291,23 @@ export function renderDocumentHtml(data: TemplateData): string {
       <span class="label">Currency</span>
       <span>${esc(data.currency)}</span>
     </div>
+    ${
+      data.paymentMethod
+        ? `<div>
+             <span class="label">Mode of payment</span>
+             <span>${esc(data.paymentMethod)}</span>
+           </div>`
+        : ''
+    }
+    ${
+      // Free text from the user, so escaped like every other interpolation.
+      data.dispatchedThrough
+        ? `<div>
+             <span class="label">Dispatched through</span>
+             <span>${esc(data.dispatchedThrough)}</span>
+           </div>`
+        : ''
+    }
   </div>
 
   <table class="items">
