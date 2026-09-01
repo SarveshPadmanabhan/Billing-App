@@ -44,8 +44,14 @@ export class CompaniesController {
           legalName: true,
           email: true,
           phone: true,
+          // The settings form edits these, so the list must return them —
+          // a field the client never receives cannot be pre-filled, and would
+          // silently save as empty.
+          addressLine1: true,
+          addressLine2: true,
           city: true,
           state: true,
+          postalCode: true,
           countryCode: true,
           currencyCode: true,
           taxNumber: true,
