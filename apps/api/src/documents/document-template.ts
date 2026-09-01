@@ -236,15 +236,24 @@ export function renderDocumentHtml(data: TemplateData): string {
     border-top: 1.5px solid #CBD5E1; font-size: 12pt; font-weight: 700; padding-top: 8px;
   }
 
+  /* Right-aligned column so the QR sits under the totals it refers to,
+     rather than floating on the opposite side of the page from the amount. */
   .pay {
     margin-top: 24px;
     display: flex;
-    gap: 16px;
-    align-items: center;
+    flex-direction: column;
+    align-items: flex-end;
     page-break-inside: avoid;
   }
   .pay img { width: 120px; height: 120px; display: block; }
-  .pay .pay-text { font-size: 11px; color: #475569; }
+  .pay .pay-text {
+    margin-top: 8px;
+    font-size: 11px;
+    color: #475569;
+    text-align: right;
+    /* Keeps the caption from running wider than the code above it. */
+    max-width: 220px;
+  }
   .pay .pay-text strong { display: block; font-size: 12px; color: #0F172A; margin-bottom: 2px; }
   .pay .pay-id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #0F172A; }
 
