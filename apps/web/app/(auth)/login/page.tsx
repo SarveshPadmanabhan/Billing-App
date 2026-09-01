@@ -108,7 +108,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-canvas px-4">
+    <main className="flex min-h-screen items-center justify-end bg-canvas px-4 sm:px-10">
       <div className="w-full max-w-[400px] rounded-md border border-border bg-surface p-6 shadow-card">
         <h1 className="text-h2 text-ink">Sign in</h1>
         <p className="mt-1 text-body text-ink-muted">Access your billing workspace.</p>

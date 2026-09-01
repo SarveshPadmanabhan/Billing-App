@@ -49,7 +49,7 @@ export default function RegisterPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-canvas px-4 py-8">
+    <main className="flex min-h-screen items-center justify-end bg-canvas px-4 py-8 sm:px-10">
       <div className="w-full max-w-[440px] rounded-md border border-border bg-surface p-6 shadow-card">
         <h1 className="text-h2 text-ink">Create your account</h1>
         <p className="mt-1 text-body text-ink-muted">Start billing in a few minutes.</p>
