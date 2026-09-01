@@ -53,7 +53,7 @@ export default function RegisterPage() {
       {/* Same treatment as sign-in: the two pages link to each other, so a
           different background on each reads as two different products. */}
       <div aria-hidden="true" className="absolute inset-0 z-0 overflow-hidden bg-gradient-to-br from-[#1E293B] via-[#334155] to-[#0F172A]">
-        <img src="/login-background.jpg" alt="" className="h-full w-full object-cover" />
+        <img src="/login-background.20e17dab.jpg" alt="" className="h-full w-full object-cover" />
         <div className="absolute inset-0 bg-ink/30" />
       </div>
 

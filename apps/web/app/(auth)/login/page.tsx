@@ -123,7 +123,7 @@ export default function LoginPage() {
       */}
       <div aria-hidden="true" className="absolute inset-0 z-0 overflow-hidden bg-gradient-to-br from-[#1E293B] via-[#334155] to-[#0F172A]">
         <img
-          src="/login-background.jpg"
+          src="/login-background.20e17dab.jpg"
           alt=""
           className="h-full w-full object-cover"
         />
