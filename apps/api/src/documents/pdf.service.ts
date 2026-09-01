@@ -406,19 +406,49 @@ export class PdfService implements OnModuleDestroy {
     };
   }
 
-  private async loadOrganisation(tx: TenantClient, organisationId: string) {
+  /**
+   * Letterhead for a document.
+   *
+   * Takes the ISSUING COMPANY's details, not the organisation's. A company is
+   * a separate legal entity: printing the organisation's name, address and tax
+   * number on an invoice raised by one of its companies misstates who is
+   * billing, and puts the wrong GST number on a tax document.
+   *
+   * Falls back per field to the organisation, because a company created before
+   * these fields were filled in may hold only a name — and an invoice with no
+   * address at all is worse than one carrying the parent's.
+   */
+  private async loadLetterhead(
+    tx: TenantClient,
+    organisationId: string,
+    companyId: string | null,
+  ) {
     const org = await tx.organisation.findUniqueOrThrow({ where: { id: organisationId } });
+    const company = companyId
+      ? await tx.company.findFirst({ where: { id: companyId, organisationId } })
+      : null;
+
+    // A company with no address of its own inherits the organisation's whole
+    // block rather than a half-merged one — mixing a company's street with the
+    // organisation's city would produce an address that exists nowhere.
+    const hasOwnAddress = Boolean(
+      company?.addressLine1 || company?.city || company?.postalCode,
+    );
+
     return {
-      name: org.name,
-      legalName: org.legalName,
-      email: org.email,
-      phone: org.phone,
+      name: company?.name ?? org.name,
+      legalName: company?.legalName ?? (company ? null : org.legalName),
+      email: company?.email ?? org.email,
+      phone: company?.phone ?? org.phone,
+      // Website is an organisation-level property; companies have no such field.
       website: org.website,
-      addressLines: this.addressLines(org),
-      taxNumber: org.taxNumber,
+      addressLines: this.addressLines(hasOwnAddress && company ? company : org),
+      taxNumber: company?.taxNumber ?? (company ? null : org.taxNumber),
       // Remote images are blocked during render; a logo must already be a data
       // URI. Wiring real logo storage is a later ticket.
-      logoDataUri: org.logoUrl?.startsWith('data:') ? org.logoUrl : null,
+      logoDataUri: (company?.logoUrl ?? org.logoUrl)?.startsWith('data:')
+        ? (company?.logoUrl ?? org.logoUrl)
+        : null,
     };
   }
 
@@ -468,7 +498,7 @@ export class PdfService implements OnModuleDestroy {
       kind: 'QUOTATION',
       documentNumber: quotation.quotationNumber,
       status: quotation.status,
-      organisation: await this.loadOrganisation(tx, organisationId),
+      organisation: await this.loadLetterhead(tx, organisationId, quotation.companyId),
       customer: this.customerBlock(quotation.customer),
       dates: {
         issueLabel: 'Quotation date',
@@ -514,7 +544,7 @@ export class PdfService implements OnModuleDestroy {
       kind: 'INVOICE',
       documentNumber: invoice.invoiceNumber,
       status: invoice.status,
-      organisation: await this.loadOrganisation(tx, organisationId),
+      organisation: await this.loadLetterhead(tx, organisationId, invoice.companyId),
       customer: this.customerBlock(invoice.customer),
       dates: {
         issueLabel: 'Invoice date',
