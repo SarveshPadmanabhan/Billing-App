@@ -8,6 +8,7 @@
   },
   "scripts": {
     "build": "turbo run build",
+    "postinstall": "pnpm --filter @billing/database generate",
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",

@@ -195,6 +195,26 @@ Note on the direct host: `db.<ref>.supabase.co:5432` is IPv6-only and, on some
 projects, refuses connections entirely. The session pooler works in both cases
 and is the safer default.
 
+### Deploying
+
+The Prisma Client is generated code and is **not** committed. A clean clone
+has only stub types, so `instanceof Prisma.PrismaClientKnownRequestError` does
+not narrow and every catch block using it fails to compile:
+
+```
+error TS18046: 'error' is of type 'unknown'.
+```
+
+This never appears locally, where the client was generated once and persists —
+only on CI, which starts from a fresh checkout. Two things prevent it:
+
+- a root `postinstall` running `prisma generate`
+- a `build` script on `@billing/database`, so Turbo's `^build` dependency
+  generates the client before any app that imports it compiles
+
+Do not remove either. Verified by deleting the generated client and running
+`pnpm build` from clean.
+
 ### Preparing a handover or a fresh environment
 
 `./scripts/reset-database.sh` drops the database and rebuilds it empty from the
