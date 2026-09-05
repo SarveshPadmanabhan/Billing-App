@@ -46,5 +46,20 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
+  /**
+   * `api/` is excluded, and that exclusion is load-bearing.
+   *
+   * The API is served from this same origin: vercel.json rewrites /api/v1/*
+   * to the serverless function. Without excluding it here, this middleware
+   * runs FIRST and redirects every unauthenticated API call to /login — so
+   * sign-in itself returns a 307 to the login page, and the browser reports
+   * only "We could not create that account".
+   *
+   * It is not a security loss: this middleware was never an access control
+   * (see the note at the top of this file), and the API authenticates every
+   * request on its own.
+   */
+  matcher: [
+    '/((?!api/|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+  ],
 };
