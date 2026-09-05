@@ -34,4 +34,4 @@ blob-report/
 !apps/web/.env.production
 
 # Generated API function bundle (built during deploy)
-apps/web/api-bundle/
+packages/api-bundle/

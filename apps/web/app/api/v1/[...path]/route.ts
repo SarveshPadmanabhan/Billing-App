@@ -36,13 +36,12 @@ export const maxDuration = 60;
 let handlerPromise: Promise<NodeHandler> | null = null;
 
 async function loadHandler(): Promise<NodeHandler> {
-  // A static relative import so webpack traces the bundle as a dependency of
-  // this route and Vercel packages it with the function. cwd-based paths were
-  // tried and fail: cwd is apps/web under `next start` but the project root in
-  // the deployed function.
-  const mod = (await import('../../../../api-bundle/index.cjs')) as {
-    default?: NodeHandler;
-  };
+  // Imported by package name, not by path. Path-based approaches were tried
+  // and fail on Vercel: an absolute path resolved at build time points into
+  // the build container, and a relative one depends on .next/server's internal
+  // layout. A workspace package is resolved by Node the ordinary way and is
+  // traced into the deployed function automatically.
+  const mod = (await import('@billing/api-bundle')) as { default?: NodeHandler };
   return (mod.default ?? (mod as unknown as NodeHandler));
 }
 

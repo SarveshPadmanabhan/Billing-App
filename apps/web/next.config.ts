@@ -1,5 +1,4 @@
 import type { NextConfig } from 'next';
-import { resolve as pathResolve } from 'node:path';
 
 const config: NextConfig = {
   reactStrictMode: true,
@@ -15,8 +14,31 @@ const config: NextConfig = {
    * uses. Listing it as a server external package makes Next require() it at
    * runtime instead, which is the whole point of prebuilding it.
    */
-  serverExternalPackages: ['playwright', 'playwright-core', '@prisma/client'],
+  serverExternalPackages: ['@billing/api-bundle', 'playwright', 'playwright-core', '@prisma/client'],
   webpack(config, { isServer }) {
+    /**
+     * Keep the prebuilt API bundle out of webpack entirely.
+     *
+     * It is already a complete CommonJS bundle whose optional NestJS
+     * integrations and Playwright are external on purpose. Webpack otherwise
+     * walks those require() calls and fails on @grpc/proto-loader and
+     * chromium-bidi, which nothing here uses. serverExternalPackages alone
+     * does not cover a workspace package, so it is externalised explicitly.
+     *
+     * The request is emitted verbatim as require("@billing/api-bundle"), so
+     * Node resolves it through node_modules at runtime — no absolute build
+     * path (gone when the function runs) and no reliance on .next internals.
+     */
+    if (isServer) {
+      config.externals = [
+        ...(Array.isArray(config.externals) ? config.externals : [config.externals].filter(Boolean)),
+        ({ request }: { request?: string }, callback: (err?: unknown, result?: string) => void) =>
+          request === '@billing/api-bundle'
+            ? callback(undefined, 'commonjs @billing/api-bundle')
+            : callback(),
+      ];
+    }
+
     /**
      * Keep the prebuilt API bundle out of webpack entirely.
      *
@@ -26,21 +48,6 @@ const config: NextConfig = {
      * chromium-bidi — packages this app never uses. Marking it external emits
      * a plain require() that Node resolves at runtime.
      */
-    if (isServer) {
-      config.externals = [
-        ...(Array.isArray(config.externals) ? config.externals : [config.externals].filter(Boolean)),
-        ({ request }: { request?: string }, callback: (err?: unknown, result?: string) => void) => {
-          if (request?.includes('api-bundle/index.cjs')) {
-            // Absolute: the emitted require() runs from .next/server/app/...,
-            // where the original relative specifier no longer resolves.
-            const abs = pathResolve(process.cwd(), 'api-bundle/index.cjs');
-            return callback(undefined, `commonjs ${abs}`);
-          }
-          return callback();
-        },
-      ];
-    }
-
     /**
      * Workspace packages use NodeNext-style `./foo.js` specifiers, which is
      * correct for the NestJS API but unresolvable by webpack's bundler

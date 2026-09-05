@@ -165,6 +165,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@billing/api-bundle':
+        specifier: workspace:*
+        version: link:../../packages/api-bundle
       '@billing/types':
         specifier: workspace:*
         version: link:../../packages/types
@@ -257,6 +260,8 @@ importers:
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
+
+  packages/api-bundle: {}
 
   packages/config:
     dependencies:

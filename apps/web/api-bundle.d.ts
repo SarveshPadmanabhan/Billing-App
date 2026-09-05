@@ -7,7 +7,7 @@
  * without this, `next build` fails with "Cannot find module" on a clean
  * checkout even though the runtime import resolves correctly.
  */
-declare module '*/api-bundle/index.cjs' {
+declare module '@billing/api-bundle' {
   import type { IncomingMessage, ServerResponse } from 'node:http';
   const handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>;
   export default handler;

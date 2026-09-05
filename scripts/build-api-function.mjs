@@ -20,6 +20,7 @@
  * app validates with Zod and serves plain HTTP.
  */
 import { build } from 'esbuild';
+import { writeFile, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
@@ -44,9 +45,11 @@ const NEST_OPTIONAL = [
  */
 const RUNTIME_EXTERNAL = ['@prisma/client', '.prisma/client', 'playwright', 'playwright-core'];
 
+await mkdir(resolve(root, 'packages/api-bundle'), { recursive: true });
+
 const result = await build({
   entryPoints: [resolve(root, 'apps/api/src/serverless/handler.ts')],
-  outfile: resolve(root, 'apps/web/api-bundle/index.cjs'),
+  outfile: resolve(root, 'packages/api-bundle/index.cjs'),
   bundle: true,
   platform: 'node',
   target: 'node20',
@@ -58,6 +61,13 @@ const result = await build({
   logLevel: 'info',
   metafile: true,
 });
+
+// A package.json makes this resolvable as `@billing/api-bundle` from the
+// Next.js route, so no relative path into .next/server is required.
+await writeFile(
+  resolve(root, 'packages/api-bundle/package.json'),
+  JSON.stringify({ name: '@billing/api-bundle', version: '0.0.0', private: true, main: './index.cjs' }, null, 2) + '\n',
+);
 
 const bytes = Object.values(result.metafile.outputs)[0]?.bytes ?? 0;
 console.log(`API function bundle: ${(bytes / 1024 / 1024).toFixed(1)}MB`);
