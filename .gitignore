@@ -32,3 +32,7 @@ blob-report/
 
 # Committed: contains only public build-time config, no secrets.
 !apps/web/.env.production
+
+# Generated API function bundle (built during deploy)
+api/_bundle.cjs
+api/_bundle.cjs.map
