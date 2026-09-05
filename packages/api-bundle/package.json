@@ -1,0 +1,6 @@
+{
+  "name": "@billing/api-bundle",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./index.cjs"
+}
