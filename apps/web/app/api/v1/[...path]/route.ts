@@ -22,6 +22,16 @@ import { toWebResponse, type NodeHandler } from './node-bridge';
 export const runtime = 'nodejs';
 // Never cache: every response depends on the session cookie.
 export const dynamic = 'force-dynamic';
+/**
+ * Declared here rather than in vercel.json's `functions` map: that map matches
+ * keys as globs, and this route's directory name contains square brackets,
+ * which are glob character classes rather than literals.
+ *
+ * 60s is the ceiling a PDF render needs — the Browserless call itself is
+ * capped at PDF_RENDER_TIMEOUT_MS (25s) so a hung render returns our own
+ * error with a request id well before the platform kills the function.
+ */
+export const maxDuration = 60;
 
 let handlerPromise: Promise<NodeHandler> | null = null;
 

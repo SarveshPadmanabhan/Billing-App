@@ -3,14 +3,5 @@
   "buildCommand": "node scripts/build-api-function.mjs && pnpm turbo run build --filter=@billing/web",
   "installCommand": "pnpm install --frozen-lockfile",
   "outputDirectory": "apps/web/.next",
-  "framework": "nextjs",
-  "functions": {
-    "api/index.js": {
-      "memory": 1024,
-      "maxDuration": 60
-    }
-  },
-  "rewrites": [
-    { "source": "/api/v1/:path*", "destination": "/api" }
-  ]
+  "framework": "nextjs"
 }
