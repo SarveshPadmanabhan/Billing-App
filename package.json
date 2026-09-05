@@ -7,7 +7,7 @@
     "node": ">=20.11.0"
   },
   "scripts": {
-    "build": "pnpm build:api-function && turbo run build",
+    "build": "turbo run build",
     "postinstall": "pnpm --filter @billing/database generate",
     "dev": "turbo run dev",
     "lint": "turbo run lint",
@@ -23,24 +23,18 @@
     "test:e2e:ui": "playwright test --ui",
     "test:integration": "bash tests/integration/tenant-isolation.sh && bash tests/integration/customers.sh && bash tests/integration/quotations.sh && bash tests/integration/invoices.sh && bash tests/integration/payments.sh && bash tests/integration/search.sh && bash tests/integration/dashboard.sh && bash tests/integration/pdf.sh && bash tests/integration/integrity.sh",
     "test:all": "pnpm test && pnpm test:integration && pnpm test:e2e",
-    "db:reset:demo": "dotenv -e .env -- tsx scripts/reset-demo-data.ts",
-    "build:api-function": "node scripts/build-api-function.mjs"
+    "db:reset:demo": "dotenv -e .env -- tsx scripts/reset-demo-data.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
     "@types/node": "^22.10.2",
     "dotenv-cli": "^7.4.4",
-    "esbuild": "^0.24.0",
     "prettier": "^3.4.2",
     "tsx": "^4.23.12",
     "turbo": "^2.3.3",
     "typescript": "^5.7.2"
   },
   "dependencies": {
-    "@billing/api": "workspace:*",
-    "@billing/config": "workspace:*",
-    "@billing/database": "workspace:*",
-    "next": "15.5.23",
-    "reflect-metadata": "^0.2.2"
+    "next": "15.5.23"
   }
 }

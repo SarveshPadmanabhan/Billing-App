@@ -1,0 +1,44 @@
+# API image for Railway / Render / any container host.
+#
+# Playwright's own base image is used rather than a plain node image: PDF
+# rendering drives headless Chromium, which needs a long list of system
+# libraries (fonts, X, nss, dbus). Installing those by hand is how PDF
+# generation ends up failing in production only, with a stack trace about a
+# missing .so file and nothing to connect it to.
+#
+# The tag MUST track the playwright version in apps/api/package.json. A driver
+# built against one browser build talking to another fails at launch.
+FROM mcr.microsoft.com/playwright:v1.62.1-jammy
+
+ENV NODE_ENV=production
+ENV PNPM_HOME=/usr/local/bin
+
+WORKDIR /app
+
+RUN corepack enable
+
+# Manifests first, so a dependency-free code change reuses the install layer.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
+COPY apps/api/package.json ./apps/api/
+COPY apps/web/package.json ./apps/web/
+COPY packages/config/package.json ./packages/config/
+COPY packages/database/package.json ./packages/database/
+COPY packages/types/package.json ./packages/types/
+COPY packages/validation/package.json ./packages/validation/
+
+# The root postinstall runs `prisma generate`, which needs the schema present.
+COPY packages/database/prisma ./packages/database/prisma
+
+RUN pnpm install --frozen-lockfile
+
+COPY . .
+
+RUN pnpm turbo run build --filter=@billing/api
+
+# Documentation only — Railway injects its own PORT and the app reads API_PORT.
+EXPOSE 4000
+
+# tsx, not node: rootDir=./src keeps the workspace packages out of dist, so
+# they are still TypeScript source at runtime and plain node cannot load them
+# (ERR_MODULE_NOT_FOUND on @billing/database). Verified by booting dist/main.js.
+CMD ["pnpm", "--filter", "@billing/api", "start"]
