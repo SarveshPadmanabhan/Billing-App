@@ -21,6 +21,15 @@ const serverSchema = z
 
     APP_URL: z.string().url(),
     API_URL: z.string().url(),
+    /**
+     * Port to bind.
+     *
+     * Container hosts (Railway, Render, Fly, Heroku) assign a port at runtime
+     * and inject it as PORT; the app MUST bind that one or the platform's
+     * router reaches nothing and every request times out. `loadServerEnv` maps
+     * PORT onto this field when present, so API_PORT stays the single name the
+     * application reads while still honouring the host.
+     */
     API_PORT: z.coerce.number().int().positive().default(4000),
 
     // Runtime connection. Uses a role WITHOUT rolbypassrls so RLS applies.
@@ -57,6 +66,18 @@ const serverSchema = z
 
     CORS_ORIGINS: z.string().default('http://localhost:3000'),
     COOKIE_DOMAIN: z.string().default('localhost'),
+    /**
+     * Set true when the web app and the API are on different sites, as in the
+     * split Vercel (web) + Railway (API) deployment. It switches the session
+     * cookie to SameSite=None so the browser actually sends it cross-site.
+     *
+     * Left false for local development and single-host deployments, where
+     * SameSite=Lax is the stronger and correct choice.
+     */
+    CROSS_SITE_COOKIES: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((v) => v === 'true'),
     ENCRYPTION_KEY: z.string().optional(),
     RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60000),
     RATE_LIMIT_MAX: z.coerce.number().int().positive().default(100),
@@ -65,6 +86,25 @@ const serverSchema = z
     SENTRY_DSN: z.string().optional(),
   })
   .superRefine((env, ctx) => {
+    /**
+     * Checked in EVERY environment, deliberately above the production-only
+     * block below.
+     *
+     * A cross-site cookie is sent with SameSite=None, which browsers reject
+     * unless it is also Secure — so this combination is broken wherever it
+     * appears, not just in production. Placing it after the early return left
+     * it unreachable in development, which a test caught only because it
+     * asserted the guard could actually fail (ADR-009 rule 2).
+     */
+    if (env.CROSS_SITE_COOKIES && !env.APP_URL.startsWith('https://')) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['CROSS_SITE_COOKIES'],
+        message:
+          'CROSS_SITE_COOKIES requires HTTPS: SameSite=None cookies are rejected without Secure',
+      });
+    }
+
     if (env.NODE_ENV !== 'production') return;
 
     // Production-only invariants. Dev placeholders must never reach prod.
@@ -109,7 +149,14 @@ let cached: ServerEnv | undefined;
 export function loadServerEnv(source: NodeJS.ProcessEnv = process.env): ServerEnv {
   if (cached) return cached;
 
-  const parsed = serverSchema.safeParse(source);
+  // A platform-assigned PORT wins over API_PORT: on Railway and similar hosts
+  // it is the only port the router forwards to. An explicitly set API_PORT is
+  // still honoured when the platform sets no PORT at all.
+  const withPort: NodeJS.ProcessEnv = source.PORT
+    ? { ...source, API_PORT: source.PORT }
+    : source;
+
+  const parsed = serverSchema.safeParse(withPort);
   if (!parsed.success) {
     const problems = parsed.error.issues
       .map((issue) => `  - ${issue.path.join('.') || '(root)'}: ${issue.message}`)

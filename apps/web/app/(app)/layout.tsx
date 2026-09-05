@@ -43,8 +43,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         .catch(() => {
           // Signing out server-side is best-effort: the session may already be
           // gone. Removing the cookie locally is what breaks the loop.
-          document.cookie =
-            'better-auth.session_token=; Max-Age=0; path=/; SameSite=Lax';
+          // Both cookie names: production uses the __Secure- prefix, so
+          // clearing only the bare name would leave the real cookie in place
+          // and the redirect loop unbroken.
+          for (const name of [
+            'better-auth.session_token',
+            '__Secure-better-auth.session_token',
+          ]) {
+            document.cookie = `${name}=; Max-Age=0; path=/; SameSite=Lax`;
+          }
         })
         .finally(() => router.replace('/login'));
     } else if (needsOnboarding) {

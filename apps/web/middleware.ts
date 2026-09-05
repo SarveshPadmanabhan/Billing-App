@@ -11,11 +11,20 @@ import { NextResponse, type NextRequest } from 'next/server';
  */
 
 const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/reset-password'];
-const SESSION_COOKIE = 'better-auth.session_token';
+
+/**
+ * Better Auth renames the cookie when secure cookies are enabled: the
+ * `__Secure-` prefix is a browser-enforced guarantee that the cookie was set
+ * over HTTPS. Production therefore carries a DIFFERENT name from development,
+ * and checking only the bare name would find nothing on a deployed site —
+ * every signed-in user bounced to /login, forever, with no error anywhere.
+ * Both names are checked so one build works in both places.
+ */
+const SESSION_COOKIES = ['better-auth.session_token', '__Secure-better-auth.session_token'];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const hasSession = request.cookies.has(SESSION_COOKIE);
+  const hasSession = SESSION_COOKIES.some((name) => request.cookies.has(name));
   const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
   if (pathname === '/') {
