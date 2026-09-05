@@ -1,4 +1,5 @@
 import type { NextConfig } from 'next';
+import { join as pathJoin } from 'node:path';
 
 const config: NextConfig = {
   reactStrictMode: true,
@@ -15,6 +16,33 @@ const config: NextConfig = {
    * runtime instead, which is the whole point of prebuilding it.
    */
   serverExternalPackages: ['@billing/api-bundle', 'playwright', 'playwright-core', '@prisma/client'],
+  /**
+   * Force the Prisma engine into the deployed function.
+   *
+   * The API bundle require()s @prisma/client, but it is externalised, so
+   * webpack never looks inside it and Vercel's file tracing cannot see the
+   * dependency — the function deployed without Prisma and failed at runtime
+   * with "Cannot find module '@prisma/client'". Tracing follows JS imports
+   * and would in any case miss the native .so engine that Prisma loads by
+   * path at runtime, so both are named explicitly.
+   */
+  outputFileTracingRoot: pathJoin(__dirname, '../../'),
+  outputFileTracingIncludes: {
+    /**
+     * The KEY is matched as a glob against route paths, and this route's real
+     * path contains "[...path]" — square brackets are character classes, so
+     * the literal key never matches itself. "/api/**" matches it plainly.
+     *
+     * The VALUES are globs relative to outputFileTracingRoot (the repo root),
+     * not to this config's directory; a "../../" prefix silently matches
+     * nothing.
+     */
+    '/api/**': [
+      'node_modules/.pnpm/@prisma+client*/node_modules/.prisma/client/**',
+      'node_modules/.pnpm/@prisma+client*/node_modules/@prisma/client/**',
+      'packages/api-bundle/**',
+    ],
+  },
   webpack(config, { isServer }) {
     /**
      * Keep the prebuilt API bundle out of webpack entirely.

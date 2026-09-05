@@ -13,6 +13,13 @@
 generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["relationJoins"]
+  /**
+   * The engine is a NATIVE binary, so the build machine's architecture is not
+   * enough: a client generated only for darwin-arm64 cannot run on Vercel's
+   * Linux functions. "native" keeps local development working, and the
+   * rhel-openssl-3.0.x target is what Vercel's Node 20 runtime uses.
+   */
+  binaryTargets   = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
