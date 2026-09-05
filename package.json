@@ -38,6 +38,7 @@
     "@billing/api": "workspace:*",
     "@billing/config": "workspace:*",
     "@billing/database": "workspace:*",
+    "next": "15.5.23",
     "reflect-metadata": "^0.2.2"
   }
 }

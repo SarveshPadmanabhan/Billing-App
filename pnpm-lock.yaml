@@ -22,6 +22,9 @@ importers:
       '@billing/database':
         specifier: workspace:*
         version: link:packages/database
+      next:
+        specifier: 15.5.23
+        version: 15.5.23(@playwright/test@1.62.1)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
       reflect-metadata:
         specifier: ^0.2.2
         version: 0.2.2
