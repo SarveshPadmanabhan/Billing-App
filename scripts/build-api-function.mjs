@@ -45,7 +45,7 @@ const NEST_OPTIONAL = [
 const RUNTIME_EXTERNAL = ['@prisma/client', '.prisma/client', 'playwright', 'playwright-core'];
 
 const result = await build({
-  entryPoints: [resolve(root, 'api/_handler.ts')],
+  entryPoints: [resolve(root, 'apps/api/src/serverless/handler.ts')],
   outfile: resolve(root, 'apps/web/api-bundle/index.cjs'),
   bundle: true,
   platform: 'node',
