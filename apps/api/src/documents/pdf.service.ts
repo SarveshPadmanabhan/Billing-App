@@ -1,13 +1,13 @@
 import { Injectable, Inject, OnModuleDestroy } from '@nestjs/common';
 import { renderUpiQrDataUri, isValidUpiId } from './upi-qr.js';
 import { createHash } from 'node:crypto';
-import { chromium, type Browser } from 'playwright';
+import { type PdfRenderer } from './pdf-renderer.js';
 import { withTenant, Prisma, type TenantClient } from '@billing/database';
 import type { OrganisationContext } from '@billing/types';
 import { StorageService } from './storage.service.js';
 import { renderDocumentHtml, type TemplateData, type TemplateLineItem } from './document-template.js';
 import type { AppLogger } from '../common/logging/logger.js';
-import { notFound, internalError } from '../common/errors/app-error.js';
+import { notFound, internalError, AppError } from '../common/errors/app-error.js';
 
 /**
  * PDF generation for quotations and invoices (TICKET-020, TICKET-029).
@@ -58,33 +58,13 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
 
 @Injectable()
 export class PdfService implements OnModuleDestroy {
-  /** One browser reused across requests; launching costs ~300ms each time. */
-  private browser: Browser | null = null;
-  private browserPromise: Promise<Browser> | null = null;
-
   constructor(
     @Inject(StorageService) private readonly storage: StorageService,
     @Inject('APP_LOGGER') private readonly logger: AppLogger,
+    // Local Chromium in development, a remote renderer in production — the
+    // deployment target cannot carry a browser. See pdf-renderer.ts.
+    @Inject('PDF_RENDERER') private readonly renderer: PdfRenderer,
   ) {}
-
-  private async getBrowser(): Promise<Browser> {
-    if (this.browser?.isConnected()) return this.browser;
-
-    // Concurrent callers share one launch rather than starting several.
-    this.browserPromise ??= chromium
-      .launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] })
-      .then((browser) => {
-        this.browser = browser;
-        this.browserPromise = null;
-        return browser;
-      })
-      .catch((error) => {
-        this.browserPromise = null;
-        throw error;
-      });
-
-    return this.browserPromise;
-  }
 
   /**
    * Hash of everything the PDF displays.
@@ -276,26 +256,18 @@ export class PdfService implements OnModuleDestroy {
   }
 
   private async render(html: string): Promise<Buffer> {
-    const browser = await this.getBrowser();
-    const context = await browser.newContext();
-    const page = await context.newPage();
-
     try {
-      // No network fetches: the template is self-contained and the logo is a
-      // data URI, so `domcontentloaded` is sufficient and avoids waiting on
-      // requests that will never happen.
-      await page.setContent(html, { waitUntil: 'domcontentloaded' });
-      return await page.pdf({
-        format: 'A4',
-        printBackground: true,
-        preferCSSPageSize: true,
-      });
+      return await this.renderer.render(html);
     } catch (error) {
+      // The renderers already raise AppErrors with specific internalDetail
+      // (timeout, non-PDF response); rethrow those untouched rather than
+      // flattening them into one string that hides which failure occurred.
+      // instanceof, not `.name`: AppError extends HttpException and never sets
+      // a name, so a name check would silently never match.
+      if (error instanceof AppError) throw error;
       throw internalError(
         `PDF render failed: ${error instanceof Error ? error.message : String(error)}`,
       );
-    } finally {
-      await context.close();
     }
   }
 
@@ -572,6 +544,6 @@ export class PdfService implements OnModuleDestroy {
   }
 
   async onModuleDestroy(): Promise<void> {
-    await this.browser?.close();
+    await this.renderer.close();
   }
 }

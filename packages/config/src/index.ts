@@ -60,6 +60,25 @@ const serverSchema = z
     // Download links are deliberately short-lived (Security Doc §35).
     S3_SIGNED_URL_TTL_SECONDS: z.coerce.number().int().min(30).max(3600).default(300),
 
+    /**
+     * How PDFs are rendered.
+     *
+     * 'playwright' launches a local Chromium and needs a host that can carry
+     * the browser. 'browserless' posts the HTML to a remote renderer, which is
+     * the only option on serverless platforms — a Chromium build exceeds
+     * Vercel's 250MB unzipped function limit on its own.
+     */
+    PDF_RENDERER: z.enum(['playwright', 'browserless']).default('playwright'),
+    BROWSERLESS_ENDPOINT: z.string().url().default('https://production-sfo.browserless.io'),
+    /** Server-side secret. Must never appear in a NEXT_PUBLIC_ variable. */
+    BROWSERLESS_TOKEN: z.string().optional(),
+    /**
+     * Kept under the platform's function timeout so a hung render returns our
+     * own error with a request id, rather than the platform killing the
+     * function and returning an opaque 504.
+     */
+    PDF_RENDER_TIMEOUT_MS: z.coerce.number().int().positive().default(25_000),
+
     EMAIL_PROVIDER: z.string().optional(),
     EMAIL_FROM: z.string().optional(),
     EMAIL_API_KEY: z.string().optional(),
@@ -127,6 +146,15 @@ const serverSchema = z
         code: z.ZodIssueCode.custom,
         path: ['APP_URL'],
         message: 'Production URLs must use HTTPS',
+      });
+    }
+    // Catching this at startup rather than on the first customer download:
+    // browserless without a token cannot render anything.
+    if (env.PDF_RENDERER === 'browserless' && !env.BROWSERLESS_TOKEN) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['BROWSERLESS_TOKEN'],
+        message: 'PDF_RENDERER=browserless requires BROWSERLESS_TOKEN',
       });
     }
     if (env.CORS_ORIGINS.includes('localhost') || env.CORS_ORIGINS === '*') {

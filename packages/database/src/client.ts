@@ -32,9 +32,21 @@ export function createPrismaClient(options?: { log?: Prisma.LogLevel[] }): Prism
 
 export const prisma: PrismaClient = globalForPrisma.prisma ?? createPrismaClient();
 
-if (process.env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = prisma;
-}
+/**
+ * Cached on globalThis in EVERY environment, production included.
+ *
+ * In development this survives hot reloads, which is the usual reason for the
+ * pattern. In a serverless deployment it matters more: a warm function
+ * instance may re-evaluate this module, and without the cache each evaluation
+ * would construct another PrismaClient with its own connection pool while the
+ * previous one still holds connections. Across many warm instances that
+ * exhausts Postgres, which surfaces as intermittent "too many connections"
+ * under load rather than as an obvious failure.
+ *
+ * Set DATABASE_URL's connection_limit low (1 for serverless) and let the
+ * Supabase pooler absorb concurrency instead.
+ */
+globalForPrisma.prisma = prisma;
 
 /** Client scoped to one organisation for the life of a transaction. */
 export type TenantClient = Omit<

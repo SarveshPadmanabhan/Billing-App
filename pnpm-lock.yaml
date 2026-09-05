@@ -12,10 +12,26 @@ overrides:
 importers:
 
   .:
+    dependencies:
+      '@billing/api':
+        specifier: workspace:*
+        version: link:apps/api
+      '@billing/config':
+        specifier: workspace:*
+        version: link:packages/config
+      '@billing/database':
+        specifier: workspace:*
+        version: link:packages/database
+      reflect-metadata:
+        specifier: ^0.2.2
+        version: 0.2.2
     devDependencies:
       '@playwright/test':
         specifier: ^1.62.1
         version: 1.62.1
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.20.1
       dotenv-cli:
         specifier: ^7.4.4
         version: 7.4.4

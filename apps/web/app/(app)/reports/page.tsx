@@ -49,7 +49,8 @@ interface RevenueReport {
   totals: { invoiced: string; collected: string; invoiceCount: number };
 }
 
-const API_BASE = `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000'}/api/v1`;
+// Same-origin when unset; see lib/api-client.ts for why.
+const API_BASE = `${(process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/+$/, '')}/api/v1`;
 
 const monthLabel = (key: string) => {
   const [y, m] = key.split('-');

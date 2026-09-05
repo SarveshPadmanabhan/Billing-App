@@ -7,7 +7,23 @@ import type { ApiError, ApiSuccess, ErrorCode } from '@billing/types';
  * request; never attaches a token from JS storage (Frontend Spec §37).
  */
 
-const API_BASE = `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000'}/api/v1`;
+/**
+ * API origin.
+ *
+ * Empty (the deployed default) yields a RELATIVE base, so requests go to the
+ * same origin serving the page — which is how the Vercel deployment works:
+ * vercel.json rewrites /api/v1/* to the API function. Same-origin also keeps
+ * the session cookie SameSite=Lax rather than needing SameSite=None.
+ *
+ * Local development sets it to http://localhost:4000, where web and API are
+ * separate processes. `?? ''` rather than a localhost fallback: a missing
+ * variable in production must degrade to same-origin, never to a developer
+ * machine's address baked into a public bundle.
+ */
+// A trailing slash would produce "//api/v1", which some proxies treat as a
+// different path. Normalised once, here.
+const API_ORIGIN = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/+$/, '');
+const API_BASE = `${API_ORIGIN}/api/v1`;
 
 export class ApiRequestError extends Error {
   readonly code: ErrorCode;

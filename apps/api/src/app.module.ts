@@ -24,6 +24,11 @@ import { DashboardService } from './dashboard/dashboard.service.js';
 import { SearchController } from './search/search.controller.js';
 import { SearchService } from './search/search.service.js';
 import { PdfService } from './documents/pdf.service.js';
+import {
+  PlaywrightPdfRenderer,
+  BrowserlessPdfRenderer,
+  type PdfRenderer,
+} from './documents/pdf-renderer.js';
 import { StorageService } from './documents/storage.service.js';
 
 import { AuthGuard } from './common/guards/auth.guard.js';
@@ -71,6 +76,33 @@ const env = loadServerEnv();
     SearchService,
     DashboardService,
     StorageService,
+    /**
+     * Chosen by configuration, not by NODE_ENV.
+     *
+     * A serverless deployment cannot run Chromium, so it must have a remote
+     * renderer; a container host may legitimately use either. Keying on
+     * BROWSERLESS_TOKEN lets the same production build do both, and the throw
+     * below turns a missing token into a startup failure rather than a 500 on
+     * the first download a customer attempts.
+     */
+    {
+      provide: 'PDF_RENDERER',
+      useFactory: (): PdfRenderer => {
+        if (env.PDF_RENDERER === 'browserless') {
+          if (!env.BROWSERLESS_TOKEN) {
+            throw new Error(
+              'PDF_RENDERER=browserless requires BROWSERLESS_TOKEN to be set',
+            );
+          }
+          return new BrowserlessPdfRenderer(
+            env.BROWSERLESS_ENDPOINT,
+            env.BROWSERLESS_TOKEN,
+            env.PDF_RENDER_TIMEOUT_MS,
+          );
+        }
+        return new PlaywrightPdfRenderer();
+      },
+    },
     PdfService,
 
     // Guard order matters and is guaranteed by registration order:

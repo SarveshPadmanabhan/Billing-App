@@ -8,11 +8,19 @@ import { loadServerEnv, corsOrigins } from '@billing/config';
 import { AppModule } from './app.module.js';
 import { createLogger } from './common/logging/logger.js';
 
-async function bootstrap() {
+/**
+ * Build the fully configured Nest application without starting a listener.
+ *
+ * Split out so the serverless entrypoint (api/index.ts) and the long-running
+ * server below share ONE middleware chain. Duplicating this setup is how a
+ * deployment ends up with, say, CORS or the Better Auth mount configured in
+ * one place and not the other — which fails only in production, and only for
+ * the requests that touch the missing piece.
+ */
+export async function createApp() {
   // Parsed first: a misconfigured environment must fail before the server
   // starts listening, not on the first request that needs a missing value.
   const env = loadServerEnv();
-  const logger = createLogger(env.LOG_LEVEL, env.NODE_ENV === 'development');
 
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
 
@@ -83,6 +91,15 @@ async function bootstrap() {
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
+  return { app, env };
+}
+
+async function bootstrap() {
+  const { app, env } = await createApp();
+  const logger = createLogger(env.LOG_LEVEL, env.NODE_ENV === 'development');
+
+  // Only meaningful for a long-running process; a serverless function is torn
+  // down by the platform instead.
   app.enableShutdownHooks();
 
   await app.listen(env.API_PORT, '0.0.0.0');
@@ -93,9 +110,23 @@ async function bootstrap() {
   );
 }
 
-bootstrap().catch((error) => {
-  // No logger here: this path includes "env failed to parse", where the
-  // logger's own config is unavailable.
-  console.error('Failed to start API:', error instanceof Error ? error.message : error);
-  process.exit(1);
-});
+/**
+ * Start a listener only when this file is the process entrypoint.
+ *
+ * The serverless handler imports `createApp` from this module. Without this
+ * guard, that import would also call bootstrap() and try to bind a port inside
+ * a function that has none — the platform reports it as an opaque invocation
+ * failure with nothing in the logs to explain it.
+ */
+const isEntrypoint =
+  typeof process.argv[1] === 'string' &&
+  /[\\/]main\.(js|ts)$/.test(process.argv[1]);
+
+if (isEntrypoint) {
+  bootstrap().catch((error) => {
+    // No logger here: this path includes "env failed to parse", where the
+    // logger's own config is unavailable.
+    console.error('Failed to start API:', error instanceof Error ? error.message : error);
+    process.exit(1);
+  });
+}
