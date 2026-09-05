@@ -55,10 +55,29 @@ async function handle(request: NextRequest): Promise<Response> {
     // instance would await the same rejection forever.
     handlerPromise = null;
     console.error('API handler failed:', error instanceof Error ? error.stack : error);
-    return Response.json(
-      { error: { code: 'INTERNAL_ERROR', message: 'API unavailable' } },
-      { status: 500 },
-    );
+
+    /**
+     * Return the diagnostic in the response when DEBUG_API_ERRORS is set.
+     *
+     * Off by default and gated on an explicit environment variable, because
+     * a stack trace names internal paths and module layout. It exists because
+     * a failure reproducible only on the platform, with no accessible logs,
+     * cannot be fixed by guessing — unset the variable once the cause is
+     * known.
+     */
+    const body =
+      process.env.DEBUG_API_ERRORS === 'true'
+        ? {
+            error: {
+              code: 'INTERNAL_ERROR',
+              message: error instanceof Error ? error.message : String(error),
+              stack: error instanceof Error ? error.stack?.split('\n').slice(0, 12) : undefined,
+              cwd: process.cwd(),
+            },
+          }
+        : { error: { code: 'INTERNAL_ERROR', message: 'API unavailable' } };
+
+    return Response.json(body, { status: 500 });
   }
 }
 
