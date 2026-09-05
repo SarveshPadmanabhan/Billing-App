@@ -26,6 +26,6 @@
     "strictPropertyInitialization": false,
     "noUncheckedIndexedAccess": false
   },
-  "include": ["api/**/*.ts", "apps/api/src/**/*.ts", "packages/*/src/**/*.ts"],
+  "include": ["apps/api/src/**/*.ts", "packages/*/src/**/*.ts"],
   "exclude": ["node_modules", "dist", ".next", "build"]
 }

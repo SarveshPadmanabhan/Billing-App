@@ -46,7 +46,7 @@ const RUNTIME_EXTERNAL = ['@prisma/client', '.prisma/client', 'playwright', 'pla
 
 const result = await build({
   entryPoints: [resolve(root, 'api/_handler.ts')],
-  outfile: resolve(root, 'api/_bundle.cjs'),
+  outfile: resolve(root, 'apps/web/api-bundle/index.cjs'),
   bundle: true,
   platform: 'node',
   target: 'node20',
